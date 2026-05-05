@@ -20,6 +20,8 @@ from types import TracebackType
 from typing import Any, Self
 
 import httpx
+import logging
+import time
 
 from datetime import datetime
 from gitlab_mcp.config import Settings
@@ -32,6 +34,7 @@ from gitlab_mcp.errors import (
 )
 from gitlab_mcp.models import Issue, MergeRequest, Pipeline, Project, UserActivity
 
+logger = logging.getLogger("gitlab_mcp.client")
 
 class GitLabClient:
     """Async client for the subset of GitLab's REST API we expose via MCP."""
@@ -66,12 +69,36 @@ class GitLabClient:
     # error translation, headers, and (later) pagination stay in one place.
     # ------------------------------------------------------------------
     async def _get(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        """Perform an authenticated GET against the GitLab API.
+
+        Every call goes through here, so this is also where we log
+        request/response timing. Structured key=value pairs make the
+        log lines easy to grep and easy to ship to a log aggregator
+        without further parsing.
+        """
+        start = time.perf_counter()
         try:
             response = await self._http.get(path, params=params)
         except httpx.TimeoutException as exc:
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            logger.warning(
+                "gitlab.api.timeout path=%s params=%s elapsed_ms=%.0f",
+                path, params, elapsed_ms,
+            )
             raise GitLabError(f"timeout calling {path}") from exc
         except httpx.HTTPError as exc:
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            logger.warning(
+                "gitlab.api.network_error path=%s params=%s elapsed_ms=%.0f error=%s",
+                path, params, elapsed_ms, exc,
+            )
             raise GitLabError(f"network error calling {path}: {exc}") from exc
+
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        logger.info(
+            "gitlab.api.call path=%s params=%s status=%d elapsed_ms=%.0f",
+            path, params, response.status_code, elapsed_ms,
+        )
 
         if response.is_success:
             return response.json()

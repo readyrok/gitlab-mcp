@@ -385,3 +385,22 @@ async def test_get_user_activity_raises_not_found_for_unknown_username(
             )
 
     assert "ghost" in str(exc_info.value)
+
+@respx.mock
+async def test_get_logs_structured_call_info(
+    fake_settings: Settings,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Every API call emits a structured log line with path, status, elapsed_ms."""
+    respx.get("https://gitlab.example.com/api/v4/projects").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+
+    with caplog.at_level("INFO", logger="gitlab_mcp.client"):
+        async with GitLabClient(fake_settings) as client:
+            await client.list_projects()
+
+    log_messages = [r.getMessage() for r in caplog.records]
+    assert any("gitlab.api.call" in msg for msg in log_messages)
+    assert any("status=200" in msg for msg in log_messages)
+    assert any("path=/projects" in msg for msg in log_messages)
