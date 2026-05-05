@@ -169,3 +169,20 @@ async def test_get_merge_requests_returns_parsed_mrs(fake_settings: Settings) ->
     assert mrs[0].iid == 12
     assert mrs[0].title.startswith("Add idempotency keys")
     assert mrs[0].author.username == "sebastian"
+
+@respx.mock
+async def test_get_merge_requests_passes_state_filter_to_api(
+    fake_settings: Settings,
+) -> None:
+    """The state argument must reach GitLab as a query parameter."""
+    route = respx.get(
+        "https://gitlab.example.com/api/v4/projects/81913181/merge_requests"
+    ).mock(return_value=httpx.Response(200, json=[]))
+
+    async with GitLabClient(fake_settings) as client:
+        await client.get_merge_requests(project_id=81913181, state="merged")
+
+    sent_request = route.calls.last.request
+    # respx exposes query params via the URL object
+    assert sent_request.url.params["state"] == "merged"
+    assert sent_request.url.params["order_by"] == "updated_at"
