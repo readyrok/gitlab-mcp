@@ -366,3 +366,22 @@ async def test_get_user_activity_aggregates_events_by_category(
     assert activity.comments == 1
     # We expose a few headline event titles for the agent to reason about.
     assert any("idempotency" in title.lower() for title in activity.recent_event_titles)
+
+@respx.mock
+async def test_get_user_activity_raises_not_found_for_unknown_username(
+    fake_settings: Settings,
+) -> None:
+    """A non-existent username should raise immediately, not fall through to events."""
+    # /users?username=ghost returns []
+    respx.get("https://gitlab.example.com/api/v4/users").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+
+    async with GitLabClient(fake_settings) as client:
+        with pytest.raises(GitLabNotFoundError) as exc_info:
+            await client.get_user_activity(
+                username="ghost",
+                since=datetime(2026, 5, 1, tzinfo=timezone.utc),
+            )
+
+    assert "ghost" in str(exc_info.value)
