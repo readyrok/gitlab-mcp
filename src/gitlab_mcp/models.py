@@ -101,3 +101,22 @@ class Pipeline(_GitLabModel):
     created_at: datetime
     updated_at: datetime
     duration: int | None = None  # seconds
+
+class UserActivity(_GitLabModel):
+    """A summary of a user's recent activity in GitLab.
+
+    This is *not* a 1:1 mapping of a GitLab API resource — there's no
+    /activity endpoint. We aggregate raw events from /users/{id}/events
+    into the shape an agent actually wants to reason about: counts by
+    category, plus a few headline event titles.
+    """
+
+    username: str
+    user_id: int
+    since: datetime
+    total_events: int
+    pushes: int
+    merge_requests_opened: int
+    issues_opened: int
+    comments: int
+    recent_event_titles: list[str] = Field(default_factory=list)

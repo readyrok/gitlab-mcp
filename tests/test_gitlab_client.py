@@ -404,3 +404,67 @@ async def test_get_logs_structured_call_info(
     assert any("gitlab.api.call" in msg for msg in log_messages)
     assert any("status=200" in msg for msg in log_messages)
     assert any("path=/projects" in msg for msg in log_messages)
+
+# ------------------------------------------------------------------
+# pagination
+# ------------------------------------------------------------------
+
+@respx.mock
+async def test_list_projects_paginates_via_link_header(fake_settings: Settings) -> None:
+    """list_projects follows the Link: rel='next' header until exhausted."""
+    base = "https://gitlab.example.com/api/v4/projects"
+
+    # Page 1 — points at page 2 via Link header.
+    page1 = [_FAKE_PROJECT, _FAKE_PROJECT]
+    respx.get(base, params={"membership": "true", "simple": "false", "per_page": "100", "page": "1"}).mock(
+        return_value=httpx.Response(
+            200,
+            json=page1,
+            headers={"Link": f'<{base}?page=2&per_page=100>; rel="next"'},
+        )
+    )
+
+    # Page 2 — no Link header, so pagination stops.
+    page2 = [_FAKE_PROJECT]
+    respx.get(base, params={"page": "2", "per_page": "100"}).mock(
+        return_value=httpx.Response(200, json=page2)  # no Link: stops here
+    )
+
+    async with GitLabClient(fake_settings) as client:
+        projects = await client.list_projects()
+
+    # 2 from page 1 + 1 from page 2
+    assert len(projects) == 3
+
+
+@respx.mock
+async def test_pagination_respects_max_pages_cap(fake_settings: Settings) -> None:
+    """Pagination stops at the configured max_pages even if more data exists."""
+    base = "https://gitlab.example.com/api/v4/projects"
+
+    # Every page has a Link pointing to the next — but we should stop at the cap.
+    # Setup: pages 1, 2, 3 all return data + a "next" link. The client should
+    # only fetch up to max_pages (which list_projects sets to 5 by default,
+    # but we'll override below for this test by using a high-volume scenario).
+    for page in range(1, 11):
+        respx.get(base, params={"page": str(page), "per_page": "100"}).mock(
+            return_value=httpx.Response(
+                200,
+                json=[_FAKE_PROJECT],
+                headers={"Link": f'<{base}?page={page+1}&per_page=100>; rel="next"'},
+            )
+        )
+    # Page 1 is special — no `page` param yet
+    respx.get(base, params={"membership": "true", "simple": "false", "per_page": "100", "page": "1"}).mock(
+        return_value=httpx.Response(
+            200,
+            json=[_FAKE_PROJECT],
+            headers={"Link": f'<{base}?page=2&per_page=100>; rel="next"'},
+        )
+    )
+
+    async with GitLabClient(fake_settings) as client:
+        projects = await client.list_projects()
+
+    # Default cap is 5 pages, so we should have 5 items, not 10+.
+    assert len(projects) == 5

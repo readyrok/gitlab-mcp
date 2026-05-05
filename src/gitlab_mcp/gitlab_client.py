@@ -64,6 +64,32 @@ class GitLabClient:
     ) -> None:
         await self._http.aclose()
 
+    @staticmethod
+    def _translate_error_response(response: httpx.Response, path: str) -> GitLabError:
+        """Map an HTTP error response to one of our typed exceptions.
+
+        Returning the exception (rather than raising) lets the caller decide
+        whether to raise immediately or wrap with extra context.
+        """
+        if response.status_code in (401, 403):
+            return GitLabAuthError(
+                f"GitLab rejected token (HTTP {response.status_code}): "
+                f"check scope and expiry"
+            )
+        if response.status_code == 404:
+            return GitLabNotFoundError(f"not found: {path}")
+        if response.status_code == 429:
+            retry_after = response.headers.get("Retry-After")
+            return GitLabRateLimitError(
+                "rate limited by GitLab",
+                retry_after=float(retry_after) if retry_after else None,
+            )
+        if 500 <= response.status_code < 600:
+            return GitLabServerError(f"GitLab {response.status_code} on {path}")
+        return GitLabError(
+            f"unexpected {response.status_code} on {path}: {response.text[:200]}"
+        )
+    
     # ------------------------------------------------------------------
     # Internal request helper — every API call goes through this so that
     # error translation, headers, and (later) pagination stay in one place.
@@ -103,24 +129,53 @@ class GitLabClient:
         if response.is_success:
             return response.json()
 
-        # Translate HTTP errors into our typed hierarchy.
-        if response.status_code in (401, 403):
-            raise GitLabAuthError(
-                f"GitLab rejected token (HTTP {response.status_code}): "
-                f"check scope and expiry"
-            )
-        if response.status_code == 404:
-            raise GitLabNotFoundError(f"not found: {path}")
-        if response.status_code == 429:
-            retry_after = response.headers.get("Retry-After")
-            raise GitLabRateLimitError(
-                "rate limited by GitLab",
-                retry_after=float(retry_after) if retry_after else None,
-            )
-        if 500 <= response.status_code < 600:
-            raise GitLabServerError(f"GitLab {response.status_code} on {path}")
+        raise self._translate_error_response(response, path)
+    
+    async def _get_paginated(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+        max_pages: int = 5,
+        per_page: int = 100,
+    ) -> list[Any]:
+        """Follow GitLab's `Link: rel="next"` pagination, capped at max_pages.
 
-        raise GitLabError(f"unexpected {response.status_code} on {path}: {response.text[:200]}")
+        Why bounded: if we let an LLM pull 5,000 items in one tool call,
+        we waste prompt budget on data the agent will never use, and the
+        Anthropic API may reject the oversized response. Default cap is
+        500 items (5 pages * 100), which is enough for any realistic
+        question without breaking the prompt.
+
+        Returns a flat list of all items across pages.
+        """
+        params = dict(params or {})
+        params.setdefault("per_page", str(per_page))
+
+        all_items: list[Any] = []
+        for page in range(1, max_pages + 1):
+            params["page"] = str(page)
+            # We re-implement the GET here (rather than calling _get) so we
+            # can inspect the Link header, which _get discards.
+            start = time.perf_counter()
+            response = await self._http.get(path, params=params)
+            elapsed_ms = (time.perf_counter() - start) * 1000
+            logger.info(
+                "gitlab.api.call path=%s page=%d status=%d elapsed_ms=%.0f",
+                path, page, response.status_code, elapsed_ms,
+            )
+
+            if not response.is_success:
+                raise self._translate_error_response(response, path)
+            
+            page_items = response.json()
+            all_items.extend(page_items)
+
+            # Check Link header for rel="next". If absent, we're done.
+            link_header = response.headers.get("Link", "")
+            if 'rel="next"' not in link_header:
+                break
+
+        return all_items
 
     # ------------------------------------------------------------------
     # Public API: one method per MCP tool.
@@ -130,9 +185,12 @@ class GitLabClient:
 
         Uses `membership=true` so we only get projects the token's owner is
         actually a member of — not the entire universe of public projects
-        on the instance.
+        on the instance. Paginated up to 5 pages (500 projects).
         """
-        data = await self._get("/projects", params={"membership": "true", "simple": "false"})
+        data = await self._get_paginated(
+            "/projects",
+            params={"membership": "true", "simple": "false"},
+        )
         return [Project.model_validate(item) for item in data]
     
     async def get_merge_requests(
