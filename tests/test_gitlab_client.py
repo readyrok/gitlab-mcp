@@ -288,3 +288,25 @@ async def test_get_pipeline_status_raises_not_found_for_invalid_project(
     async with GitLabClient(fake_settings) as client:
         with pytest.raises(GitLabNotFoundError):
             await client.get_pipeline_status(project_id=99999999)
+
+# ------------------------------------------------------------------
+# get_user_activity (and its _resolve_username helper)
+# ------------------------------------------------------------------
+
+@respx.mock
+async def test_resolve_username_returns_user_id(fake_settings: Settings) -> None:
+    """Looking up a username should hit /users?username=X and return the numeric id."""
+    route = respx.get("https://gitlab.example.com/api/v4/users").mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"id": 37913311, "username": "sebastian", "name": "Sebastian Luca"}],
+        )
+    )
+
+    async with GitLabClient(fake_settings) as client:
+        user_id = await client._resolve_username("sebastian")
+
+    assert route.called
+    assert user_id == 37913311
+    # Verify the username was passed as a query param
+    assert route.calls.last.request.url.params["username"] == "sebastian"
