@@ -12,7 +12,7 @@ import pytest
 import respx
 
 from gitlab_mcp.config import Settings
-from gitlab_mcp.errors import GitLabAuthError
+from gitlab_mcp.errors import GitLabAuthError, GitLabServerError
 from gitlab_mcp.gitlab_client import GitLabClient
 from gitlab_mcp.models import Project
 
@@ -115,3 +115,16 @@ async def test_list_projects_returns_empty_list_when_no_projects(
         projects = await client.list_projects()
 
     assert projects == []
+
+@respx.mock
+async def test_list_projects_raises_server_error_on_5xx(fake_settings: Settings) -> None:
+    """5xx responses are typically transient — surface them as a typed error so callers can retry."""
+    respx.get("https://gitlab.example.com/api/v4/projects").mock(
+        return_value=httpx.Response(503, text="Service Unavailable")
+    )
+
+    async with GitLabClient(fake_settings) as client:
+        with pytest.raises(GitLabServerError) as exc_info:
+            await client.list_projects()
+
+    assert "503" in str(exc_info.value)
