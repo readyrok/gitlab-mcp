@@ -64,40 +64,115 @@ calls scattered through the codebase:
 
 ---
 
-## 4. Open questions (to revisit)
+## 4. Single point of error translation
 
-These are decisions deferred to later in the project:
+The GitLab client originally translated HTTP errors to typed exceptions
+inline in `_get`. When pagination was added, `_get_paginated` needed
+similar logic but with access to the raw response (for the `Link` header),
+so the error-translation block was duplicated — minus the 5xx and 429
+branches, which I overlooked.
+
+The existing test for 5xx errors caught the regression on the very next
+pytest run. The fix was a small refactor: extract `_translate_error_response`
+as a static helper that both code paths call. One place to update when
+GitLab adds a new error class, instead of two-and-divergent.
+
+The general principle: **duplication is fine until you find a divergence**,
+at which point a regression has already happened and you refactor under
+pressure. Test coverage on the divergent paths is what keeps the cost low.
+
+---
+
+## 5. Bounded pagination, not unbounded
+
+GitLab paginates every list endpoint at 20 items by default, 100 maximum.
+Tools have three options:
+
+1. **Return only page 1.** Simple, but silently truncates.
+2. **Auto-paginate, unbounded.** Complete data, but a busy project with
+   500 open MRs blows the LLM's prompt budget and costs the user 10x in
+   tokens for data the agent will never use.
+3. **Auto-paginate, capped.** Bounded output, agent gets a representative
+   slice, large lists fail loudly rather than silently.
+
+Chose option 3. The default cap is 5 pages × 100 items = 500 items per
+tool call. `_get_paginated` exposes `max_pages` so a future tool that
+genuinely needs unbounded data can opt out.
+
+The general principle this captures: **bounded outputs matter when the
+consumer is an LLM with a finite prompt budget**. Same reasoning drives
+`recent_event_titles[:10]` in `get_user_activity` and `min(max(limit, 1), 100)`
+clamping in `get_pipeline_status`. Tool authors think about quality of
+output for an LLM consumer, not completeness for a human reader.
+
+**What this would look different at scale.** The current cap is hard-coded.
+A multi-tenant production system would make it dynamic per-caller (some
+agents have larger context windows than others) and add a `truncated:
+True` flag in the response so the agent can mention to the user that
+data was clipped, rather than misleading them.
+
+---
+
+## 6. Structured logging at the API boundary
+
+Every call through `_get` and `_get_paginated` emits a single log line
+in `key=value` format: 
+
+gitlab.api.call    path=/projects status=200 elapsed_ms=143
+gitlab.api.timeout path=/projects/9999 elapsed_ms=30000
+
+Three reasons this is worth doing day-one rather than retrofitting later:
+
+1. **Debugging.** When a tool returns wrong data, the trace shows exactly
+   which API call to look at.
+2. **Demo legibility.** During the agent demo, these lines stream below
+   the natural-language output — the audience can see "the agent decided
+   to call list_projects, then get_merge_requests on each one."
+3. **Observability story for scale.** At 40,000 engineers, "why did the
+   agent decide X?" is unanswerable without tool-call traces tied to a
+   request id. Doing it now means the pattern is established when the
+   server gets per-request tracing later.
+
+Format choice: stdlib `logging` with key=value, no structured-logging
+library. Reasoning: zero added dependencies, greppable as plain text,
+trivially parsed by any aggregator. A logging library would be premature
+complexity at this stage.
+
+## 7. Open questions (to revisit)
+
+Decisions deferred to later in the project:
 
 - **Tool granularity.** Five coarse-grained tools (e.g. `get_merge_requests`)
   vs. many narrow tools (`list_open_mrs`, `list_draft_mrs`, …). Coarse is
   more flexible for the LLM but harder to describe well; narrow constrains
   the LLM but multiplies surface area. Will decide once I see the agent
   in action and observe failure modes. (Day 2.)
-- **Pagination.** GitLab paginates everything at 20 / 100 items. Should
-  tools auto-paginate (simpler for the LLM, expensive for big projects) or
-  expose a cursor (more complex for the LLM, cheaper)? Lean towards
-  capped auto-pagination with a clear cap in the response. (Day 1, block 4.)
 - **Caching.** No caching in the v1. If demo response times are bad, add
   short-TTL caching at the GitLab client layer. (Day 3 if needed.)
+- **Retry on 5xx.** Currently no retry — caller sees `GitLabServerError`
+  immediately. A small bounded retry (1 retry with 1s backoff) would
+  smooth over transient blips. Defer until I see whether real GitLab
+  returns 5xxs in practice during the demo.
 
----
-
-## 5. What I'd change at scale (Thales-relevant)
+## 8. What I'd change at scale (Thales-relevant)
 
 To extend this from "demo" to "platform serving 40,000 engineers":
 
-- **Auth.** Replace static PAT with per-user OAuth — the server passes the
-  caller's identity through, GitLab enforces permissions. No shared bot
-  account, no over-privileged service token.
+- **Auth.** Replace static PAT with per-user OAuth — the server passes
+  the caller's identity through, GitLab enforces permissions. No shared
+  bot account, no over-privileged service token.
 - **Multi-server discovery.** A GitLab MCP server is one of many. A
-  registry pattern (or MCP's own composition primitives) lets agents find
-  the right server for a given query.
+  registry pattern (or MCP's own composition primitives) lets agents
+  find the right server for a given query.
 - **Rate-limiting & quotas.** GitLab's API limits become a contention
   point at scale. The MCP server needs its own rate limiter / coalescing
   cache so 100 concurrent agents don't 429 each other.
-- **Observability.** Structured logs per tool call, tied to a trace id
-  the agent provides. Without this, debugging "why did the agent decide X"
-  is impossible at scale.
+- **Observability.** The structured logs from section 6, plus tracing
+  tied to a request id the agent provides. Without this, debugging "why
+  did the agent decide X" is impossible at scale.
+- **Tenancy.** The client today is single-token. Multi-tenant means
+  per-request token routing, separate connection pools, and audit logs
+  showing which tenant's token made which call.
 
 ---
 
