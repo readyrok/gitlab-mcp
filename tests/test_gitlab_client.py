@@ -12,7 +12,7 @@ import pytest
 import respx
 
 from gitlab_mcp.config import Settings
-from gitlab_mcp.errors import GitLabAuthError, GitLabServerError
+from gitlab_mcp.errors import GitLabAuthError, GitLabNotFoundError, GitLabServerError
 from gitlab_mcp.gitlab_client import GitLabClient
 from gitlab_mcp.models import Issue, MergeRequest, Pipeline, Project
 
@@ -275,3 +275,16 @@ async def test_get_pipeline_status_returns_recent_pipelines(
     assert isinstance(pipelines[0], Pipeline)
     assert pipelines[0].status == "failed"
     assert pipelines[0].ref == "main"
+
+@respx.mock
+async def test_get_pipeline_status_raises_not_found_for_invalid_project(
+    fake_settings: Settings,
+) -> None:
+    """GitLab returns 404 for non-existent project IDs — surface as typed error."""
+    respx.get(
+        "https://gitlab.example.com/api/v4/projects/99999999/pipelines"
+    ).mock(return_value=httpx.Response(404, json={"message": "404 Project Not Found"}))
+
+    async with GitLabClient(fake_settings) as client:
+        with pytest.raises(GitLabNotFoundError):
+            await client.get_pipeline_status(project_id=99999999)
