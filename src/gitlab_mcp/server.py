@@ -18,7 +18,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.fastmcp import Context, FastMCP
 
 from gitlab_mcp.config import get_settings
 from gitlab_mcp.gitlab_client import GitLabClient
@@ -61,6 +61,26 @@ mcp = FastMCP(
     lifespan=lifespan,
 )
 
+@mcp.tool(
+    description=(
+        "List all GitLab projects the configured user belongs to.\n\n"
+        "Use this when the user asks what projects/repos/codebases exist, "
+        "wants an overview of what's available, or before drilling into "
+        "any specific project. Returns each project's id (needed for other "
+        "tools), name, namespace path, default branch, and last-activity "
+        "timestamp.\n\n"
+        "Most other tools require a project_id, so this is typically the "
+        "first tool to call when the user names a project ambiguously "
+        "(e.g. 'the order service' rather than giving an id)."
+    )
+)
+async def list_projects(ctx: Context) -> list[dict]:
+    """Tool implementation: list accessible projects."""
+    server_ctx: ServerContext = ctx.request_context.lifespan_context
+    projects = await server_ctx.gitlab.list_projects()
+    # Convert Pydantic models to dicts so the JSON shape is predictable
+    # for the LLM. mode='json' serializes datetimes to ISO 8601 strings.
+    return [p.model_dump(mode="json") for p in projects]
 
 def main() -> None:
     """Console-script entrypoint, registered in pyproject.toml as `gitlab-mcp`."""
