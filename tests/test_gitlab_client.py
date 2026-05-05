@@ -14,7 +14,7 @@ import respx
 from gitlab_mcp.config import Settings
 from gitlab_mcp.errors import GitLabAuthError, GitLabServerError
 from gitlab_mcp.gitlab_client import GitLabClient
-from gitlab_mcp.models import Project
+from gitlab_mcp.models import MergeRequest, Project
 
 
 # A canned project payload shaped like a real GitLab response.
@@ -128,3 +128,44 @@ async def test_list_projects_raises_server_error_on_5xx(fake_settings: Settings)
             await client.list_projects()
 
     assert "503" in str(exc_info.value)
+
+    # ------------------------------------------------------------------
+# get_merge_requests
+# ------------------------------------------------------------------
+
+_FAKE_MR = {
+    "id": 5001,
+    "iid": 12,
+    "project_id": 81913181,
+    "title": "Add idempotency keys to POST /orders",
+    "description": "Closes the duplicate-order issue.",
+    "state": "opened",
+    "draft": False,
+    "web_url": "https://gitlab.com/sebastian/acme-order-service/-/merge_requests/12",
+    "source_branch": "feat/idempotency-keys",
+    "target_branch": "main",
+    "author": {"id": 37913311, "username": "sebastian", "name": "Sebastian Luca"},
+    "created_at": "2026-05-01T08:00:00.000Z",
+    "updated_at": "2026-05-04T16:30:00.000Z",
+    "merged_at": None,
+    # Plus extra fields we ignore:
+    "work_in_progress": False,
+    "milestone": None,
+}
+
+
+@respx.mock
+async def test_get_merge_requests_returns_parsed_mrs(fake_settings: Settings) -> None:
+    route = respx.get(
+        "https://gitlab.example.com/api/v4/projects/81913181/merge_requests"
+    ).mock(return_value=httpx.Response(200, json=[_FAKE_MR]))
+
+    async with GitLabClient(fake_settings) as client:
+        mrs = await client.get_merge_requests(project_id=81913181, state="opened")
+
+    assert route.called
+    assert len(mrs) == 1
+    assert isinstance(mrs[0], MergeRequest)
+    assert mrs[0].iid == 12
+    assert mrs[0].title.startswith("Add idempotency keys")
+    assert mrs[0].author.username == "sebastian"
