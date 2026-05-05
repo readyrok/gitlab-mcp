@@ -29,7 +29,7 @@ from gitlab_mcp.errors import (
     GitLabRateLimitError,
     GitLabServerError,
 )
-from gitlab_mcp.models import Project
+from gitlab_mcp.models import MergeRequest, Project
 
 
 class GitLabClient:
@@ -106,3 +106,24 @@ class GitLabClient:
         """
         data = await self._get("/projects", params={"membership": "true", "simple": "false"})
         return [Project.model_validate(item) for item in data]
+    
+    async def get_merge_requests(
+        self,
+        project_id: int,
+        state: str = "opened",
+    ) -> list[MergeRequest]:
+        """List merge requests for a project, optionally filtered by state.
+
+        Args:
+            project_id: The numeric GitLab project ID.
+            state: One of 'opened', 'closed', 'merged', 'locked', or 'all'.
+                Defaults to 'opened' since that's the most common agent query.
+
+        Returns:
+            A list of MergeRequest models, ordered most-recently-updated first.
+        """
+        data = await self._get(
+            f"/projects/{project_id}/merge_requests",
+            params={"state": state, "order_by": "updated_at", "sort": "desc"},
+        )
+        return [MergeRequest.model_validate(item) for item in data]
