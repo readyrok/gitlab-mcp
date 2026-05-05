@@ -468,3 +468,62 @@ async def test_pagination_respects_max_pages_cap(fake_settings: Settings) -> Non
 
     # Default cap is 5 pages, so we should have 5 items, not 10+.
     assert len(projects) == 5
+
+# ------------------------------------------------------------------
+# integration: multiple tools through a single client lifecycle
+# ------------------------------------------------------------------
+
+@respx.mock
+async def test_integration_realistic_agent_flow(fake_settings: Settings) -> None:
+    """A realistic agent flow exercises 3 tools through one client.
+
+    Why this is here: every other test mocks one endpoint at a time, so
+    cross-tool issues — shared state in the client, an auth header
+    accidentally dropped after the first call, params dict mutation
+    leaking between calls — wouldn't be caught.
+
+    This test does NOT replace unit tests. It catches a different class
+    of bug: integration drift.
+    """
+    base = "https://gitlab.example.com/api/v4"
+
+    # 1. list_projects — paginator hits this with page=1
+    list_route = respx.get(f"{base}/projects").mock(
+        return_value=httpx.Response(200, json=[_FAKE_PROJECT])
+        # No Link header, so paginator stops after page 1.
+    )
+
+    # 2. get_merge_requests for the project
+    mr_route = respx.get(f"{base}/projects/81913181/merge_requests").mock(
+        return_value=httpx.Response(200, json=[_FAKE_MR])
+    )
+
+    # 3. get_pipeline_status for the project
+    pipeline_route = respx.get(f"{base}/projects/81913181/pipelines").mock(
+        return_value=httpx.Response(200, json=[_FAKE_PIPELINE])
+    )
+
+    # Run the three calls through a single client instance.
+    async with GitLabClient(fake_settings) as client:
+        projects = await client.list_projects()
+        assert len(projects) == 1
+        proj = projects[0]
+
+        mrs = await client.get_merge_requests(project_id=proj.id, state="opened")
+        assert len(mrs) == 1
+
+        pipelines = await client.get_pipeline_status(project_id=proj.id)
+        assert len(pipelines) == 1
+
+    # Each route was called exactly once: catches accidental retries,
+    # double-fetches, or missed awaits.
+    assert list_route.call_count == 1
+    assert mr_route.call_count == 1
+    assert pipeline_route.call_count == 1
+
+    # Every request — across all three calls — must carry the auth header.
+    # If any tool dropped it (e.g. by overwriting headers in a future refactor),
+    # this assertion fails immediately.
+    all_calls = list_route.calls + mr_route.calls + pipeline_route.calls
+    for call in all_calls:
+        assert call.request.headers["PRIVATE-TOKEN"] == "test-token"
