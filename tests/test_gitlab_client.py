@@ -11,6 +11,7 @@ import httpx
 import pytest
 import respx
 
+from datetime import datetime, timezone
 from gitlab_mcp.config import Settings
 from gitlab_mcp.errors import GitLabAuthError, GitLabNotFoundError, GitLabServerError
 from gitlab_mcp.gitlab_client import GitLabClient
@@ -310,3 +311,58 @@ async def test_resolve_username_returns_user_id(fake_settings: Settings) -> None
     assert user_id == 37913311
     # Verify the username was passed as a query param
     assert route.calls.last.request.url.params["username"] == "sebastian"
+
+@respx.mock
+async def test_get_user_activity_aggregates_events_by_category(
+    fake_settings: Settings,
+) -> None:
+    """Aggregates raw events from /users/{id}/events into a tidy summary."""
+    # First HTTP call: username -> id
+    respx.get("https://gitlab.example.com/api/v4/users").mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"id": 37913311, "username": "sebastian", "name": "Sebastian Luca"}],
+        )
+    )
+
+    # Second HTTP call: events for that user.
+    # GitLab returns a wide variety of action_name values; we model the
+    # ones we care about and ignore the rest.
+    fake_events = [
+        {"action_name": "pushed to", "target_title": None, "created_at": "2026-05-04T10:00Z"},
+        {"action_name": "pushed to", "target_title": None, "created_at": "2026-05-04T11:00Z"},
+        {"action_name": "pushed to", "target_title": None, "created_at": "2026-05-04T12:00Z"},
+        {"action_name": "opened",
+         "target_type": "MergeRequest",
+         "target_title": "Add idempotency keys",
+         "created_at": "2026-05-03T09:00Z"},
+        {"action_name": "opened",
+         "target_type": "Issue",
+         "target_title": "Race condition in webhook",
+         "created_at": "2026-05-02T15:00Z"},
+        {"action_name": "commented on",
+         "target_type": "Issue",
+         "target_title": "POST /orders 500s under load",
+         "created_at": "2026-05-02T16:00Z"},
+        # An event type we don't care about — should be ignored:
+        {"action_name": "joined", "target_title": None, "created_at": "2026-05-01T08:00Z"},
+    ]
+    respx.get(
+        "https://gitlab.example.com/api/v4/users/37913311/events"
+    ).mock(return_value=httpx.Response(200, json=fake_events))
+
+    async with GitLabClient(fake_settings) as client:
+        activity = await client.get_user_activity(
+            username="sebastian",
+            since=datetime(2026, 5, 1, tzinfo=timezone.utc),
+        )
+
+    assert activity.username == "sebastian"
+    assert activity.user_id == 37913311
+    assert activity.total_events == 7  # all events count toward total
+    assert activity.pushes == 3
+    assert activity.merge_requests_opened == 1
+    assert activity.issues_opened == 1
+    assert activity.comments == 1
+    # We expose a few headline event titles for the agent to reason about.
+    assert any("idempotency" in title.lower() for title in activity.recent_event_titles)
