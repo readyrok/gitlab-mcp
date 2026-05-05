@@ -14,7 +14,7 @@ import respx
 from gitlab_mcp.config import Settings
 from gitlab_mcp.errors import GitLabAuthError, GitLabServerError
 from gitlab_mcp.gitlab_client import GitLabClient
-from gitlab_mcp.models import MergeRequest, Project
+from gitlab_mcp.models import Issue, MergeRequest, Project
 
 
 # A canned project payload shaped like a real GitLab response.
@@ -186,3 +186,39 @@ async def test_get_merge_requests_passes_state_filter_to_api(
     # respx exposes query params via the URL object
     assert sent_request.url.params["state"] == "merged"
     assert sent_request.url.params["order_by"] == "updated_at"
+
+# ------------------------------------------------------------------
+# search_issues
+# ------------------------------------------------------------------
+
+_FAKE_ISSUE = {
+    "id": 9001,
+    "iid": 3,
+    "project_id": 81913181,
+    "title": "POST /orders occasionally returns 500 under load",
+    "description": "Reproduction: 200 req/s for 30s causes ~2% of requests to fail.",
+    "state": "opened",
+    "labels": ["bug", "priority::high", "area::api"],
+    "web_url": "https://gitlab.com/sebastian/acme-order-service/-/issues/3",
+    "author": {"id": 37913311, "username": "sebastian", "name": "Sebastian Luca"},
+    "created_at": "2026-04-28T10:00:00.000Z",
+    "updated_at": "2026-05-04T11:00:00.000Z",
+    "closed_at": None,
+    "weight": None,  # ignored field
+}
+
+
+@respx.mock
+async def test_search_issues_returns_parsed_issues(fake_settings: Settings) -> None:
+    route = respx.get(
+        "https://gitlab.example.com/api/v4/projects/81913181/issues"
+    ).mock(return_value=httpx.Response(200, json=[_FAKE_ISSUE]))
+
+    async with GitLabClient(fake_settings) as client:
+        issues = await client.search_issues(project_id=81913181, query="500")
+
+    assert route.called
+    assert len(issues) == 1
+    assert isinstance(issues[0], Issue)
+    assert issues[0].iid == 3
+    assert "bug" in issues[0].labels
