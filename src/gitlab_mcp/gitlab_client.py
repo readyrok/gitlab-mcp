@@ -21,6 +21,7 @@ from typing import Any, Self
 
 import httpx
 
+from datetime import datetime
 from gitlab_mcp.config import Settings
 from gitlab_mcp.errors import (
     GitLabAuthError,
@@ -29,7 +30,7 @@ from gitlab_mcp.errors import (
     GitLabRateLimitError,
     GitLabServerError,
 )
-from gitlab_mcp.models import Issue, MergeRequest, Pipeline, Project
+from gitlab_mcp.models import Issue, MergeRequest, Pipeline, Project, UserActivity
 
 
 class GitLabClient:
@@ -190,3 +191,92 @@ class GitLabClient:
         if not data:
             raise GitLabNotFoundError(f"no user found with username '{username}'")
         return int(data[0]["id"])
+    
+    async def get_user_activity(
+        self,
+        username: str,
+        since: datetime,
+        max_events: int = 100,
+    ) -> UserActivity:
+        """Summarize a user's recent activity.
+
+        Performs a username -> user_id lookup, then aggregates events
+        from /users/{id}/events into category counts. The agent gets
+        a small structured summary instead of a fire-hose of raw events.
+
+        Args:
+            username: GitLab username (case-sensitive).
+            since: Lower bound for event recency (ISO 8601 date in UTC).
+            max_events: Cap on raw events fetched. GitLab paginates events;
+                we don't want to download a year of activity for a chatty user.
+
+        Returns:
+            A UserActivity summary.
+        """
+        user_id = await self._resolve_username(username)
+        raw_events = await self._get(
+            f"/users/{user_id}/events",
+            params={
+                "after": since.date().isoformat(),
+                "per_page": str(min(max(max_events, 1), 100)),
+            },
+        )
+        return self._aggregate_events(
+            username=username,
+            user_id=user_id,
+            since=since,
+            raw_events=raw_events,
+        )
+
+    @staticmethod
+    def _aggregate_events(
+        username: str,
+        user_id: int,
+        since: datetime,
+        raw_events: list[dict[str, Any]],
+    ) -> UserActivity:
+        """Reduce a raw event stream into a UserActivity summary.
+
+        Pure function — no I/O, easy to unit-test in isolation if we ever
+        need to. Kept as a staticmethod inside the class to keep the
+        related code together.
+        """
+        pushes = 0
+        mrs_opened = 0
+        issues_opened = 0
+        comments = 0
+        titles: list[str] = []
+
+        for event in raw_events:
+            action = event.get("action_name", "")
+            target_type = event.get("target_type") or ""
+            title = event.get("target_title")
+
+            if action == "pushed to":
+                pushes += 1
+            elif action == "opened" and target_type == "MergeRequest":
+                mrs_opened += 1
+                if title:
+                    titles.append(title)
+            elif action == "opened" and target_type == "Issue":
+                issues_opened += 1
+                if title:
+                    titles.append(title)
+            elif action == "commented on":
+                comments += 1
+                if title:
+                    titles.append(title)
+            # All other action_names (joined, accepted, closed, etc.) are
+            # counted toward total_events but not categorized — by design.
+
+        return UserActivity(
+            username=username,
+            user_id=user_id,
+            since=since,
+            total_events=len(raw_events),
+            pushes=pushes,
+            merge_requests_opened=mrs_opened,
+            issues_opened=issues_opened,
+            comments=comments,
+            recent_event_titles=titles[:10],  # cap for prompt budget
+        )
