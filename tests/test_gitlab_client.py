@@ -14,7 +14,7 @@ import respx
 from gitlab_mcp.config import Settings
 from gitlab_mcp.errors import GitLabAuthError, GitLabServerError
 from gitlab_mcp.gitlab_client import GitLabClient
-from gitlab_mcp.models import Issue, MergeRequest, Project
+from gitlab_mcp.models import Issue, MergeRequest, Pipeline, Project
 
 
 # A canned project payload shaped like a real GitLab response.
@@ -129,7 +129,7 @@ async def test_list_projects_raises_server_error_on_5xx(fake_settings: Settings)
 
     assert "503" in str(exc_info.value)
 
-    # ------------------------------------------------------------------
+# ------------------------------------------------------------------
 # get_merge_requests
 # ------------------------------------------------------------------
 
@@ -239,3 +239,39 @@ async def test_search_issues_with_empty_query_returns_all_issues(
     assert len(issues) == 2
     sent_request = route.calls.last.request
     assert sent_request.url.params["search"] == ""
+
+# ------------------------------------------------------------------
+# get_pipeline_status
+# ------------------------------------------------------------------
+
+_FAKE_PIPELINE = {
+    "id": 7001,
+    "iid": 1,
+    "project_id": 81913181,
+    "sha": "abc123def456",
+    "ref": "main",
+    "status": "failed",
+    "source": "push",
+    "web_url": "https://gitlab.com/sebastian/acme-order-service/-/pipelines/7001",
+    "created_at": "2026-05-05T07:30:00.000Z",
+    "updated_at": "2026-05-05T07:32:15.000Z",
+    "duration": 135,
+}
+
+
+@respx.mock
+async def test_get_pipeline_status_returns_recent_pipelines(
+    fake_settings: Settings,
+) -> None:
+    route = respx.get(
+        "https://gitlab.example.com/api/v4/projects/81913181/pipelines"
+    ).mock(return_value=httpx.Response(200, json=[_FAKE_PIPELINE]))
+
+    async with GitLabClient(fake_settings) as client:
+        pipelines = await client.get_pipeline_status(project_id=81913181)
+
+    assert route.called
+    assert len(pipelines) == 1
+    assert isinstance(pipelines[0], Pipeline)
+    assert pipelines[0].status == "failed"
+    assert pipelines[0].ref == "main"
