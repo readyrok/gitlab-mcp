@@ -12,6 +12,7 @@ import pytest
 import respx
 
 from gitlab_mcp.config import Settings
+from gitlab_mcp.errors import GitLabAuthError
 from gitlab_mcp.gitlab_client import GitLabClient
 from gitlab_mcp.models import Project
 
@@ -73,3 +74,44 @@ async def test_list_projects_sends_private_token_header(fake_settings: Settings)
 
     sent_request = route.calls.last.request
     assert sent_request.headers["PRIVATE-TOKEN"] == "test-token"
+
+@respx.mock
+async def test_list_projects_raises_auth_error_on_401(fake_settings: Settings) -> None:
+    """A 401 from GitLab should surface as a typed GitLabAuthError, not a raw HTTPError."""
+    respx.get("https://gitlab.example.com/api/v4/projects").mock(
+        return_value=httpx.Response(401, json={"message": "401 Unauthorized"})
+    )
+
+    async with GitLabClient(fake_settings) as client:
+        with pytest.raises(GitLabAuthError) as exc_info:
+            await client.list_projects()
+
+    # The error message should be readable enough that someone debugging
+    # the MCP server in production knows what to fix.
+    assert "401" in str(exc_info.value) or "scope" in str(exc_info.value).lower()
+
+
+@respx.mock
+async def test_list_projects_raises_auth_error_on_403(fake_settings: Settings) -> None:
+    """403 (insufficient scope) maps to the same exception as 401 — they're both 'fix your token'."""
+    respx.get("https://gitlab.example.com/api/v4/projects").mock(
+        return_value=httpx.Response(403, json={"message": "403 Forbidden"})
+    )
+
+    async with GitLabClient(fake_settings) as client:
+        with pytest.raises(GitLabAuthError):
+            await client.list_projects()
+
+@respx.mock
+async def test_list_projects_returns_empty_list_when_no_projects(
+    fake_settings: Settings,
+) -> None:
+    """A user with no accessible projects gets an empty list, not an error."""
+    respx.get("https://gitlab.example.com/api/v4/projects").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+
+    async with GitLabClient(fake_settings) as client:
+        projects = await client.list_projects()
+
+    assert projects == []
