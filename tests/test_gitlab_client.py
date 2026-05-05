@@ -527,3 +527,23 @@ async def test_integration_realistic_agent_flow(fake_settings: Settings) -> None
     all_calls = list_route.calls + mr_route.calls + pipeline_route.calls
     for call in all_calls:
         assert call.request.headers["PRIVATE-TOKEN"] == "test-token"
+
+@respx.mock
+async def test_list_projects_filters_pending_deletion(fake_settings: Settings) -> None:
+    """Pending-deletion projects (name suffix `-deletion_scheduled-NNNN`) are dropped.
+
+    GitLab.com soft-deletes for 30 days. The API keeps returning these projects
+    with renamed paths until the retention period elapses — useless to an agent.
+    """
+    real = dict(_FAKE_PROJECT)
+    deleting = dict(_FAKE_PROJECT, id=99, path="acme-old-deletion_scheduled-12345")
+
+    respx.get("https://gitlab.example.com/api/v4/projects").mock(
+        return_value=httpx.Response(200, json=[real, deleting])
+    )
+
+    async with GitLabClient(fake_settings) as client:
+        projects = await client.list_projects()
+
+    assert len(projects) == 1
+    assert projects[0].path == "acme-order-service"

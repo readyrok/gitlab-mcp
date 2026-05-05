@@ -186,12 +186,21 @@ class GitLabClient:
         Uses `membership=true` so we only get projects the token's owner is
         actually a member of — not the entire universe of public projects
         on the instance. Paginated up to 5 pages (500 projects).
+
+        Filters out pending-deletion projects: GitLab.com soft-deletes for
+        30 days and continues returning them in the API with a renamed path
+        (`*-deletion_scheduled-NNNN`). Since the agent can't actually do
+        anything with these and they pollute the prompt, we drop them here.
         """
         data = await self._get_paginated(
             "/projects",
             params={"membership": "true", "simple": "false"},
         )
-        return [Project.model_validate(item) for item in data]
+        return [
+            Project.model_validate(item)
+            for item in data
+            if "deletion_scheduled" not in item.get("path", "")
+        ]
     
     async def get_merge_requests(
         self,
