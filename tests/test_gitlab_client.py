@@ -222,3 +222,20 @@ async def test_search_issues_returns_parsed_issues(fake_settings: Settings) -> N
     assert isinstance(issues[0], Issue)
     assert issues[0].iid == 3
     assert "bug" in issues[0].labels
+
+@respx.mock
+async def test_search_issues_with_empty_query_returns_all_issues(
+    fake_settings: Settings,
+) -> None:
+    """An empty query is valid — agents sometimes ask 'what issues exist?'
+    without a specific keyword. GitLab returns everything matching state."""
+    route = respx.get(
+        "https://gitlab.example.com/api/v4/projects/81913181/issues"
+    ).mock(return_value=httpx.Response(200, json=[_FAKE_ISSUE, _FAKE_ISSUE]))
+
+    async with GitLabClient(fake_settings) as client:
+        issues = await client.search_issues(project_id=81913181, query="")
+
+    assert len(issues) == 2
+    sent_request = route.calls.last.request
+    assert sent_request.url.params["search"] == ""
