@@ -29,7 +29,7 @@ from gitlab_mcp.errors import (
     GitLabRateLimitError,
     GitLabServerError,
 )
-from gitlab_mcp.models import Issue, MergeRequest, Project
+from gitlab_mcp.models import Issue, MergeRequest, Pipeline, Project
 
 
 class GitLabClient:
@@ -156,3 +156,25 @@ class GitLabClient:
             },
         )
         return [Issue.model_validate(item) for item in data]
+    
+    async def get_pipeline_status(
+        self,
+        project_id: int,
+        limit: int = 10,
+    ) -> list[Pipeline]:
+        """Get the most recent pipelines for a project.
+
+        Args:
+            project_id: The numeric GitLab project ID.
+            limit: How many pipelines to return (1-100, default 10).
+                Capped low because the agent rarely needs deep history —
+                it's almost always asking 'did the latest build pass?'.
+
+        Returns:
+            Pipelines ordered most-recent-first.
+        """
+        data = await self._get(
+            f"/projects/{project_id}/pipelines",
+            params={"per_page": str(min(max(limit, 1), 100)), "order_by": "id", "sort": "desc"},
+        )
+        return [Pipeline.model_validate(item) for item in data]
