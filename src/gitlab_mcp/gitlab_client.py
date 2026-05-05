@@ -29,7 +29,7 @@ from gitlab_mcp.errors import (
     GitLabRateLimitError,
     GitLabServerError,
 )
-from gitlab_mcp.models import MergeRequest, Project
+from gitlab_mcp.models import Issue, MergeRequest, Project
 
 
 class GitLabClient:
@@ -127,3 +127,32 @@ class GitLabClient:
             params={"state": state, "order_by": "updated_at", "sort": "desc"},
         )
         return [MergeRequest.model_validate(item) for item in data]
+    
+    async def search_issues(
+        self,
+        project_id: int,
+        query: str,
+        state: str = "all",
+    ) -> list[Issue]:
+        """Search issues in a project by keyword.
+
+        Args:
+            project_id: The numeric GitLab project ID.
+            query: Free-text search query — matches title and description.
+            state: 'opened', 'closed', or 'all'. Defaults to 'all' so the
+                agent gets every relevant issue regardless of state.
+
+        Returns:
+            Issues whose title or description contains the query, ordered
+            most-recently-updated first.
+        """
+        data = await self._get(
+            f"/projects/{project_id}/issues",
+            params={
+                "search": query,
+                "state": state,
+                "order_by": "updated_at",
+                "sort": "desc",
+            },
+        )
+        return [Issue.model_validate(item) for item in data]
