@@ -178,3 +178,15 @@ class GitLabClient:
             params={"per_page": str(min(max(limit, 1), 100)), "order_by": "id", "sort": "desc"},
         )
         return [Pipeline.model_validate(item) for item in data]
+    
+    async def _resolve_username(self, username: str) -> int:
+        """Look up the numeric user ID for a username.
+
+        GitLab's events endpoint requires the numeric ID. Agents naturally
+        deal in usernames, so this helper bridges the gap. Cached at the
+        GitLab side via Last-Modified so repeated lookups are cheap.
+        """
+        data = await self._get("/users", params={"username": username})
+        if not data:
+            raise GitLabNotFoundError(f"no user found with username '{username}'")
+        return int(data[0]["id"])
