@@ -138,7 +138,38 @@ library. Reasoning: zero added dependencies, greppable as plain text,
 trivially parsed by any aggregator. A logging library would be premature
 complexity at this stage.
 
-## 7. Open questions (to revisit)
+## 7. Tool descriptions vs. system prompt — where to put behaviour
+
+Two surfaces influence what the agent does:
+
+  * **Per-tool descriptions** (in `server.py`'s `@mcp.tool(description=...)`)
+    — read by the LLM when deciding *which* tool to call.
+  * **System prompt** (in `agent/loop.py`'s `SYSTEM_PROMPT`)
+    — read by the LLM as global behaviour guidance for every turn.
+
+Rule of thumb:
+
+  * If the issue is "Claude picked the wrong tool", fix the tool
+    description. Tools should be self-describing — when, what, and how.
+  * If the issue is "Claude is too verbose / always uses bullets / 
+    speaks in the wrong tone", fix the system prompt.
+
+Concrete tuning during Day 2:
+
+  * Observed: when asked "list project names", Claude returned full
+    project details (description, IDs, timestamps).
+  * Diagnosis: per-tool descriptions can't anticipate response-length
+    preferences — that's a global behaviour, not a tool-selection issue.
+  * Fix: added a "match the response length to what was asked" line
+    to the system prompt.
+  * Result: short questions now get short answers; the agent still
+    goes deep when explicitly asked.
+
+The general principle: **tool descriptions answer "should I call this?"
+The system prompt answers "how should I respond?" Keep behaviour in the
+right place.**
+
+## 8. Open questions (to revisit)
 
 Decisions deferred to later in the project:
 
@@ -154,7 +185,7 @@ Decisions deferred to later in the project:
   smooth over transient blips. Defer until I see whether real GitLab
   returns 5xxs in practice during the demo.
 
-## 8. What I'd change at scale (Thales-relevant)
+## 9. What I'd change at scale (Thales-relevant)
 
 To extend this from "demo" to "platform serving 40,000 engineers":
 
