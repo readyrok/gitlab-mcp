@@ -56,6 +56,25 @@ class Settings(BaseSettings):
         description="Python logging level for the server.",
     )
 
+    # ----- Anthropic / agent settings -----
+    # Optional in the runtime config because the gitlab-mcp server doesn't
+    # need them; only the agent CLI does. Pydantic-settings will read them
+    # from .env or environment if present.
+    anthropic_api_key: SecretStr | None = Field(
+        default=None,
+        description="Anthropic API key. Required only when running the agent.",
+    )
+    anthropic_model: str = Field(
+        default="claude-sonnet-4-6",
+        description="Claude model identifier for the agent.",
+    )
+    agent_max_iterations: int = Field(
+        default=25,
+        ge=1,
+        le=100,
+        description="Cap on tool-call iterations per question (loop safety net).",
+    )
+
     @property
     def gitlab_api_base(self) -> str:
         """Convenience: the /api/v4 base URL the rest of the code uses."""
