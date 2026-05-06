@@ -169,7 +169,99 @@ The general principle: **tool descriptions answer "should I call this?"
 The system prompt answers "how should I respond?" Keep behaviour in the
 right place.**
 
-## 8. Open questions (to revisit)
+## 8. Three-layer agent: protocol, orchestration, presentation
+
+The CLI agent is split into three modules with strict responsibility
+boundaries:
+
+  * `agent/mcp_client.py` (Layer 1): wraps the MCP SDK's stdio client.
+    Spawns the server as a subprocess, exchanges JSON-RPC, exposes
+    `list_tools()` and `call_tool()`. Knows about MCP, knows nothing
+    about LLMs.
+  * `agent/loop.py` (Layer 2): owns the Anthropic client, conversation
+    history, and the agentic loop. Yields events as the loop progresses.
+    Knows about LLMs, knows nothing about terminals.
+  * `agent/cli.py` (Layer 3): renders events to a terminal, runs the
+    REPL, parses CLI flags. Knows nothing about LLMs or MCP — just
+    consumes events.
+
+Each layer has a different rate of change and a different reason to
+be tested:
+
+  * The MCP layer changes when the SDK does (rare).
+  * The loop changes during prompt-engineering iteration (often).
+  * The CLI changes when UX requirements shift (occasional).
+
+Tangling them means a CLI tweak risks breaking the protocol code, or
+a prompt experiment risks breaking the terminal rendering. Same
+principle as the GitLab client's `_get` (HTTP) vs. tool methods
+(business logic) split — different domain, identical instinct.
+
+**Why streaming events instead of returning a final answer.** A
+synchronous `ask() -> str` would block the terminal silently for
+several seconds while Claude reasons and tools run. That kills the
+demo. Yielding events (`ToolCallEvent`, `ToolResultEvent`,
+`TextEvent`) as they happen turns those silent seconds into a live
+trace of the agent's reasoning. The CLI prints each event the moment
+it arrives; the user sees the agent thinking. Async generators
+(`async def ... yield`) make this clean — no callback indirection,
+no separate streaming abstraction.
+
+**Why history is persistent across `ask()` calls.** Follow-up
+questions in the REPL ("and what about issues?") only work if Claude
+sees the prior tool results in context. Each `ask()` appends to a
+single `_history` list owned by the loop. `reset()` is exposed for
+fresh starts. This shifts the cost: Anthropic's per-call token
+spend grows over a session because we resend history every turn.
+For a 3-day demo, that cost is invisible; in production it would
+warrant prompt caching (Anthropic supports it natively) — explicitly
+out of scope for this project.
+
+## 9. Testing strategy: three files, three scopes
+
+The test suite is split into three files reflecting the architecture:
+
+  * `tests/test_gitlab_client.py` — unit tests for the GitLab REST
+    wrapper. Fast (httpx mocked via `respx`), TDD-driven during Day 1.
+    Covers happy paths, every error class in the typed hierarchy,
+    pagination, parameter forwarding.
+  * `tests/test_server.py` — integration tests for the MCP layer.
+    Verifies all tools are registered with the right names and that
+    the wiring from a tool function through the lifespan-shared client
+    actually works end-to-end (against a `respx`-mocked GitLab).
+  * `tests/test_agent_loop.py` — orchestration tests for the agent.
+    Hand-rolled fakes for both Anthropic and the MCP adapter; tests
+    the loop's logic (event order, history growth, iteration cap)
+    without burning real API credits or spawning subprocesses.
+
+Two principles I tried to keep:
+
+  * **Don't repeat coverage between files.** The server tests don't
+    re-test the GitLab client's error handling — that's already covered.
+    The agent tests don't re-test the server's tool registrations —
+    same reason. Each file owns its scope.
+  * **Hand-rolled fakes when they're clearer than `mock.patch`.** The
+    agent tests use small `@dataclass` stand-ins for Anthropic responses
+    and the MCP adapter. They're more lines of code than a `mock.patch`
+    one-liner would be, but they read like documentation and the IDE
+    catches typos. In a 6-month-old codebase that's a real win.
+
+What's deliberately *not* tested:
+
+  * Real Anthropic round-trips. Cost and flakiness aren't worth the
+    marginal coverage. The protocol itself was verified manually via
+    MCP Inspector during development.
+  * Real GitLab calls. Same reasoning, plus the seeded data shouldn't
+    be a test dependency.
+  * The CLI's terminal output. Could be done with `capsys` but the
+    rendering logic is trivial enough that a regression would be
+    obvious.
+
+The result is 25 tests, ~85% coverage on the two main packages, and
+a test run under 1 second on cold start. Fast enough that running
+the suite is part of the inner loop, not a chore.
+
+## 10. Open questions (to revisit)
 
 Decisions deferred to later in the project:
 
@@ -185,7 +277,7 @@ Decisions deferred to later in the project:
   smooth over transient blips. Defer until I see whether real GitLab
   returns 5xxs in practice during the demo.
 
-## 9. What I'd change at scale (Thales-relevant)
+## 11. What I'd change at scale (Thales-relevant)
 
 To extend this from "demo" to "platform serving 40,000 engineers":
 
