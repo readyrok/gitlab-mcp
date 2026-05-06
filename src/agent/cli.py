@@ -28,8 +28,8 @@ import logging
 import sys
 
 from agent.loop import (
-    AgentLoop,
     AgentEvent,
+    AgentLoop,
     ErrorEvent,
     TextEvent,
     ToolCallEvent,
@@ -37,7 +37,6 @@ from agent.loop import (
 )
 from agent.mcp_client import MCPClientAdapter
 from gitlab_mcp.config import get_settings
-
 
 # ----- Output helpers --------------------------------------------------------
 

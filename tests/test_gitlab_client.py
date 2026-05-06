@@ -7,16 +7,16 @@ in milliseconds, work offline, and don't burn API rate limit.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import httpx
 import pytest
 import respx
 
-from datetime import datetime, timezone
 from gitlab_mcp.config import Settings
 from gitlab_mcp.errors import GitLabAuthError, GitLabNotFoundError, GitLabServerError
 from gitlab_mcp.gitlab_client import GitLabClient
 from gitlab_mcp.models import Issue, MergeRequest, Pipeline, Project
-
 
 # A canned project payload shaped like a real GitLab response.
 # We keep it small — just the fields our Project model actually parses.
@@ -354,7 +354,7 @@ async def test_get_user_activity_aggregates_events_by_category(
     async with GitLabClient(fake_settings) as client:
         activity = await client.get_user_activity(
             username="sebastian",
-            since=datetime(2026, 5, 1, tzinfo=timezone.utc),
+            since=datetime(2026, 5, 1, tzinfo=UTC),
         )
 
     assert activity.username == "sebastian"
@@ -381,7 +381,7 @@ async def test_get_user_activity_raises_not_found_for_unknown_username(
         with pytest.raises(GitLabNotFoundError) as exc_info:
             await client.get_user_activity(
                 username="ghost",
-                since=datetime(2026, 5, 1, tzinfo=timezone.utc),
+                since=datetime(2026, 5, 1, tzinfo=UTC),
             )
 
     assert "ghost" in str(exc_info.value)

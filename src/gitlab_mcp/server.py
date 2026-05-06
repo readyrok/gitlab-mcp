@@ -17,7 +17,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from mcp.server.fastmcp import Context, FastMCP
 
@@ -185,9 +185,9 @@ async def get_user_activity(
 ) -> dict:
     server_ctx: ServerContext = ctx.request_context.lifespan_context
     if since:
-        since_dt = datetime.fromisoformat(since).replace(tzinfo=timezone.utc)
+        since_dt = datetime.fromisoformat(since).replace(tzinfo=UTC)
     else:
-        since_dt = datetime.now(timezone.utc) - timedelta(days=7)
+        since_dt = datetime.now(UTC) - timedelta(days=7)
     activity = await server_ctx.gitlab.get_user_activity(
         username=username, since=since_dt
     )

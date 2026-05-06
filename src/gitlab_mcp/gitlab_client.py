@@ -16,14 +16,14 @@ Design notes:
 
 from __future__ import annotations
 
+import logging
+import time
+from datetime import datetime
 from types import TracebackType
 from typing import Any, Self
 
 import httpx
-import logging
-import time
 
-from datetime import datetime
 from gitlab_mcp.config import Settings
 from gitlab_mcp.errors import (
     GitLabAuthError,

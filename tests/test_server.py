@@ -30,7 +30,6 @@ from gitlab_mcp.config import Settings
 from gitlab_mcp.gitlab_client import GitLabClient
 from gitlab_mcp.server import ServerContext, mcp
 
-
 _FAKE_PROJECT = {
     "id": 81913181,
     "name": "acme-order-service",

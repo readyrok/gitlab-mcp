@@ -16,8 +16,6 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
-import pytest
-
 from agent.loop import (
     AgentLoop,
     ErrorEvent,
@@ -26,7 +24,6 @@ from agent.loop import (
     ToolResultEvent,
 )
 from gitlab_mcp.config import Settings
-
 
 # ----- Fake Anthropic response shapes ---------------------------------------
 
