@@ -1,5 +1,7 @@
 # gitlab-mcp
 
+[![CI](https://github.com/readyrok/gitlab-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/readyrok/gitlab-mcp/actions/workflows/ci.yml)
+
 > A read-only [Model Context Protocol](https://modelcontextprotocol.io/) server
 > exposing GitLab as five tools an AI agent can use, plus a CLI agent that
 > drives it through the Anthropic API.
