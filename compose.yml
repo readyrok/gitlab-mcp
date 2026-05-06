@@ -1,0 +1,21 @@
+# Run the gitlab-mcp server in Docker.
+#
+# Usage:
+#   docker compose build      # rebuild after code changes
+#   docker compose run --rm server
+#
+# This is for running the *server* under Docker — useful if you want to
+# point an MCP client (Claude Desktop, Cursor, the agent in this repo)
+# at a containerized server. The agent itself isn't containerized; it
+# spawns the server as a subprocess locally for speed and simplicity.
+#
+# The server reads MCP JSON-RPC over stdio, hence stdin_open + tty.
+
+services:
+  server:
+    build: .
+    image: gitlab-mcp:dev
+    env_file:
+      - .env
+    stdin_open: true
+    tty: true

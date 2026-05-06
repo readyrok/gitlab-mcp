@@ -19,7 +19,8 @@ WORKDIR /app
 
 # Copy only what's needed to resolve deps first — this layer caches as long
 # as pyproject.toml doesn't change, so source edits don't reinstall packages.
-COPY pyproject.toml ./
+# README.md is needed because hatchling embeds it as package metadata.
+COPY pyproject.toml README.md ./
 COPY src ./src
 
 # Install into a project-local venv (no system-wide pollution).

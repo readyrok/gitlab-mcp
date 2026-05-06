@@ -119,6 +119,23 @@ uv run agent --verbose "..."              # show every tool call as it happens
 
 # 5. Or run the MCP server directly (e.g. for Claude Desktop, Cursor, the MCP Inspector)
 uv run gitlab-mcp
+
+## Running the server in Docker
+
+A `Dockerfile` and `compose.yml` are included so you can run the MCP
+server in a container — useful when wiring it into Claude Desktop,
+Cursor, or another MCP client that prefers a stable subprocess target.
+
+```bash
+docker compose build
+docker compose run --rm server
+```
+
+The image is multi-stage (uv-based builder, slim runtime) and runs as
+a non-root user. The agent itself isn't containerized — it spawns the
+server as a local subprocess, which is faster and simpler for the
+demo flow above.
+
 ```
 
 ## Project layout
