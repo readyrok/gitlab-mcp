@@ -11,28 +11,7 @@ server surface (how tools are described and executed) and its client surface
 (how an agent discovers and orchestrates them). The whole stack runs locally
 against your own GitLab and Anthropic credentials.
 
-```text
-> uv run agent
-gitlab-mcp agent — type a question or /help
-> what's open in my projects?
-🤔 thinking...
-  🔧 list_projects()
-     ✓ {"id": 81913181, "name": "acme-order-service", ...}
-  🔧 get_merge_requests(project_id=81913181, state='opened')
-     ✓ {"id": 5001, "title": "WIP: async SQLAlchemy migration", ...}
-  🔧 get_merge_requests(project_id=81913196, state='opened')
-     ✓ {"id": 5004, "title": "Add bulk stock-update endpoint", ...}
-  🔧 get_merge_requests(project_id=81913213, state='opened')
-     ✓ {"id": 5006, "title": "Add dark mode toggle and theme provider", ...}
-
-You have 4 open merge requests across your three projects:
-
-- acme-order-service: "WIP: async SQLAlchemy migration" (draft) and
-  "Add Prometheus metrics for queue depth" (ready for review)
-- acme-inventory-api: "Add bulk stock-update endpoint"
-- acme-web-frontend: "Add dark mode toggle and theme provider"
-> _
-```
+[![asciicast](https://asciinema.org/a/nEFlQfXTL8O5qldu.svg)](https://asciinema.org/a/nEFlQfXTL8O5qldu)
 
 ## Why this exists
 
