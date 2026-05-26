@@ -36,12 +36,18 @@ class _FakeBlock:
     id: str | None = None
     input: dict | None = None
 
+@dataclass
+class _FakeUsage:
+    """Stand-in for the Anthropic Usage object."""
+    input_tokens: int = 100
+    output_tokens: int = 50
 
 @dataclass
 class _FakeResponse:
     """Stand-in for an Anthropic Message response."""
     content: list[_FakeBlock]
-    stop_reason: str  # "end_turn" or "tool_use"
+    stop_reason: str
+    usage: _FakeUsage = field(default_factory=_FakeUsage)
 
 
 @dataclass
@@ -154,7 +160,9 @@ async def test_loop_handles_single_tool_call_then_text() -> None:
 
     # Order: text -> tool_use -> tool_result -> text
     types = [type(e).__name__ for e in events]
-    assert types == ["TextEvent", "ToolCallEvent", "ToolResultEvent", "TextEvent"]
+    assert types == [
+        "TextEvent", "ToolCallEvent", "ToolResultEvent", "TextEvent", "UsageEvent"
+    ]
 
     tool_call = events[1]
     assert isinstance(tool_call, ToolCallEvent)
@@ -171,6 +179,12 @@ async def test_loop_handles_single_tool_call_then_text() -> None:
     # MCP was called exactly once with the right tool.
     assert mcp.calls_received == [("list_projects", {})]
 
+    # The final event is the usage trace.
+    usage = events[-1]
+    assert type(usage).__name__ == "UsageEvent"
+    assert usage.total_tokens > 0
+    assert usage.tool_calls == 1
+
 
 async def test_loop_handles_pure_text_answer_without_tools() -> None:
     """Follow-up questions that need no tools should exit after one round-trip."""
@@ -184,8 +198,12 @@ async def test_loop_handles_pure_text_answer_without_tools() -> None:
 
     events = await _collect(loop.ask("how many projects again?"))
 
-    assert len(events) == 1
+    assert len(events) == 2
     assert isinstance(events[0], TextEvent)
+    assert type(events[1]).__name__ == "UsageEvent"
+    # No tools were called, so the usage trace should reflect that.
+    assert events[1].tool_calls == 0
+    assert events[1].api_round_trips == 1
     assert mcp.calls_received == []  # no tools called
     assert len(anthropic.messages.calls_received) == 1  # one round trip
 

@@ -34,6 +34,7 @@ from agent.loop import (
     TextEvent,
     ToolCallEvent,
     ToolResultEvent,
+    UsageEvent,
 )
 from agent.mcp_client import MCPClientAdapter
 from gitlab_mcp.config import get_settings
@@ -67,6 +68,15 @@ def _print_event(event: AgentEvent) -> None:
         print(event.text, flush=True)
     elif isinstance(event, ErrorEvent):
         print(f"\n[error] {event.message}", flush=True)
+    elif isinstance(event, UsageEvent):
+        # Dim one-line cost/latency trace after each answer.
+        print(
+            f"\n  [{event.total_tokens:,} tokens · "
+            f"{event.api_round_trips} API calls · "
+            f"{event.tool_calls} tool calls · "
+            f"{event.latency_seconds:.1f}s]",
+            flush=True,
+        )
 
 
 async def _run_one_question(loop: AgentLoop, question: str) -> None:

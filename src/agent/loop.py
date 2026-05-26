@@ -32,6 +32,8 @@ from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from typing import Any
 
+import time
+
 import anthropic
 
 from agent.mcp_client import MCPClientAdapter
@@ -92,8 +94,26 @@ class ErrorEvent:
     """Something went wrong inside the loop (e.g. iteration cap hit)."""
     message: str
 
+@dataclass
+class UsageEvent:
+    """Emitted once at the end of an ask() call — the cost/latency trace.
 
-AgentEvent = TextEvent | ToolCallEvent | ToolResultEvent | ErrorEvent
+    This is the observability hook: every question produces a measurable
+    record of what it cost in tokens, API round-trips, tool calls, and
+    wall-clock time. At scale, this data is how you answer 'is the agent
+    expensive?' and 'why is it slow?'.
+    """
+    input_tokens: int
+    output_tokens: int
+    api_round_trips: int
+    tool_calls: int
+    latency_seconds: float
+
+    @property
+    def total_tokens(self) -> int:
+        return self.input_tokens + self.output_tokens
+
+AgentEvent = TextEvent | ToolCallEvent | ToolResultEvent | ErrorEvent | UsageEvent
 
 
 # ----- The loop itself -------------------------------------------------------
@@ -140,6 +160,16 @@ class AgentLoop:
         # Append the user message to the persistent history.
         self._history.append({"role": "user", "content": question})
 
+        # Append the user message to the persistent history.
+        self._history.append({"role": "user", "content": question})
+
+        # Observability counters for this question.
+        start_time = time.perf_counter()
+        total_input_tokens = 0
+        total_output_tokens = 0
+        api_round_trips = 0
+        tool_call_count = 0
+
         for iteration in range(self.settings.agent_max_iterations):
             logger.info("agent.loop.iteration n=%d history_len=%d", iteration + 1, len(self._history))
 
@@ -150,6 +180,10 @@ class AgentLoop:
                 tools=tools,
                 messages=self._history,
             )
+
+            api_round_trips += 1
+            total_input_tokens += response.usage.input_tokens
+            total_output_tokens += response.usage.output_tokens
 
             # The response.content is a list of blocks: text, tool_use, etc.
             # Append the *whole* assistant response to history before processing —
@@ -163,7 +197,15 @@ class AgentLoop:
                     yield TextEvent(text=block.text)
 
             # If Claude didn't ask for any tools, we're done.
+            # If Claude didn't ask for any tools, we're done.
             if response.stop_reason != "tool_use":
+                yield UsageEvent(
+                    input_tokens=total_input_tokens,
+                    output_tokens=total_output_tokens,
+                    api_round_trips=api_round_trips,
+                    tool_calls=tool_call_count,
+                    latency_seconds=time.perf_counter() - start_time,
+                )
                 return
 
             # Otherwise, execute every tool_use block in order, collecting
@@ -174,6 +216,8 @@ class AgentLoop:
                     continue
 
                 yield ToolCallEvent(name=block.name, arguments=dict(block.input))
+
+                tool_call_count += 1
 
                 try:
                     result_text = await self.mcp.call_tool(
@@ -203,6 +247,14 @@ class AgentLoop:
             self._history.append({"role": "user", "content": tool_results})
 
         # If we fell out of the for loop, we hit the iteration cap.
+        yield UsageEvent(
+            input_tokens=total_input_tokens,
+            output_tokens=total_output_tokens,
+            api_round_trips=api_round_trips,
+            tool_calls=tool_call_count,
+            latency_seconds=time.perf_counter() - start_time,
+        )
+        
         yield ErrorEvent(
             message=(
                 f"Hit the {self.settings.agent_max_iterations}-iteration safety cap. "
