@@ -271,7 +271,61 @@ the suite is part of the inner loop, not a chore.
 
 ---
 
-## 10. Open questions (to revisit)
+## 10. Behavioral evals — testing the non-deterministic part
+
+Unit tests verify deterministic code: given input X, assert output Y.
+They cannot verify the agent, because the agent is non-deterministic —
+the same question produces different wordings, sometimes different
+(equally valid) tool-call sequences. Asserting an exact transcript
+would be flaky; flaky tests are worse than no tests.
+
+So the agent gets **evals** instead — a separate suite under
+`tests/evals/` that drives the real agent against real Claude and real
+GitLab, and asserts on *behaviors* rather than transcripts:
+
+  * `must_call_tools` / `must_not_call_tools` — subset semantics. The
+    agent must call these tools; extra calls are fine; missing ones
+    fail. `must_not_call` catches over-eager tool use.
+  * `answer_any_of` / `answer_all_of` — case-insensitive substring
+    checks on the final answer. Crude but reliable. No LLM-as-judge —
+    that would add cost, latency, and a second source of
+    non-determinism.
+
+16 scenarios cover basic tool selection, single- and cross-project
+queries, multi-step reasoning, and edge cases: declining a write
+action on a read-only agent, handling a nonexistent user, resolving
+an ambiguous project name. The negative tests (a greeting must call
+NO tools) are as important as the positive ones — over-eagerness is
+a real failure mode.
+
+Evals are gated behind `pytest -m evals` and excluded from the default
+run, because they are slow (~3 min) and cost API credits (~$0.40 per
+full run). The default `pytest` stays fast and free; evals run
+deliberately.
+
+**The eval loop in practice.** The suite isn't decoration — it found
+something. The first report run showed `search_issues` being called
+with `project_id=0`: the agent was guessing a placeholder ID, hitting
+a 404, and recovering via the error-handling path. The scenario still
+*passed* (the recovery worked) but the report made the inefficiency
+visible. The fix was a stronger tool description — an explicit
+"never pass a placeholder like 0, call list_projects first" — applied
+to all three project_id tools. A re-run confirmed the fix and confirmed
+no regression. That is the whole point of evals: they give visibility
+into *how* the agent succeeds, so prompt and tool-description changes
+can be measured rather than guessed.
+
+**What this would become at scale.** The current suite is run by hand.
+A production agent platform would run evals in CI on every prompt or
+tool-description change, track the pass rate over time, and treat a
+drop as a build failure — the same way a coverage drop or a failing
+unit test would. It would also expand to an adversarial set: prompt-
+injection attempts via issue titles, deliberately confusing questions,
+and questions with no good answer.
+
+---
+
+## 11. Open questions (to revisit)
 
 Decisions explicitly deferred — not skipped:
 
@@ -304,7 +358,7 @@ Decisions resolved during the build (so they're no longer open):
 
 ---
 
-## 11. What I'd change at scale (Thales-relevant)
+## 12. What I'd change at scale
 
 To extend this from "demo" to "platform serving 40,000 engineers":
 
@@ -325,5 +379,3 @@ To extend this from "demo" to "platform serving 40,000 engineers":
   showing which tenant's token made which call.
 
 ---
-
-*Add new entries below this line as decisions get made.*
