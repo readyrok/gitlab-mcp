@@ -70,9 +70,13 @@ asyncio_mode = "auto"
 addopts = [
     "--strict-markers",
     "--strict-config",
-    "-ra",                   # show short summary for skipped/failed
+    "-ra",
     "--cov=gitlab_mcp",
     "--cov-report=term-missing",
+    "--ignore=tests/evals",  # evals are slow/paid; run via -m evals override
+]
+markers = [
+    "evals: end-to-end behavioral evaluations against real Claude + GitLab. Slow and costs API credits. Run with: uv run pytest -m evals --no-cov tests/evals",
 ]
 
 [tool.coverage.run]

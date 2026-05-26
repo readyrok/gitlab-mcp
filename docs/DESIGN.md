@@ -116,10 +116,12 @@ data was clipped, rather than misleading them.
 ## 6. Structured logging at the API boundary
 
 Every call through `_get` and `_get_paginated` emits a single log line
-in `key=value` format: 
+in `key=value` format:
 
+```
 gitlab.api.call    path=/projects status=200 elapsed_ms=143
 gitlab.api.timeout path=/projects/9999 elapsed_ms=30000
+```
 
 Three reasons this is worth doing day-one rather than retrofitting later:
 
@@ -137,6 +139,8 @@ Format choice: stdlib `logging` with key=value, no structured-logging
 library. Reasoning: zero added dependencies, greppable as plain text,
 trivially parsed by any aggregator. A logging library would be premature
 complexity at this stage.
+
+---
 
 ## 7. Tool descriptions vs. system prompt — where to put behaviour
 
@@ -168,6 +172,8 @@ Concrete tuning during Day 2:
 The general principle: **tool descriptions answer "should I call this?"
 The system prompt answers "how should I respond?" Keep behaviour in the
 right place.**
+
+---
 
 ## 8. Three-layer agent: protocol, orchestration, presentation
 
@@ -217,6 +223,8 @@ For a 3-day demo, that cost is invisible; in production it would
 warrant prompt caching (Anthropic supports it natively) — explicitly
 out of scope for this project.
 
+---
+
 ## 9. Testing strategy: three files, three scopes
 
 The test suite is split into three files reflecting the architecture:
@@ -261,21 +269,40 @@ The result is 25 tests, ~85% coverage on the two main packages, and
 a test run under 1 second on cold start. Fast enough that running
 the suite is part of the inner loop, not a chore.
 
+---
+
 ## 10. Open questions (to revisit)
 
-Decisions deferred to later in the project:
+Decisions explicitly deferred — not skipped:
 
-- **Tool granularity.** Five coarse-grained tools (e.g. `get_merge_requests`)
-  vs. many narrow tools (`list_open_mrs`, `list_draft_mrs`, …). Coarse is
-  more flexible for the LLM but harder to describe well; narrow constrains
-  the LLM but multiplies surface area. Will decide once I see the agent
-  in action and observe failure modes. (Day 2.)
-- **Caching.** No caching in the v1. If demo response times are bad, add
-  short-TTL caching at the GitLab client layer. (Day 3 if needed.)
+- **Caching.** No caching in v1. The agent typically asks the same
+  questions in a single session (e.g. `list_projects` followed by
+  `get_merge_requests` for each), so a short-TTL in-memory cache at the
+  GitLab client layer would cut latency meaningfully without staleness
+  risk. Skipped because demo response times are already fine; would
+  revisit on the first real performance complaint.
 - **Retry on 5xx.** Currently no retry — caller sees `GitLabServerError`
-  immediately. A small bounded retry (1 retry with 1s backoff) would
-  smooth over transient blips. Defer until I see whether real GitLab
-  returns 5xxs in practice during the demo.
+  immediately. A small bounded retry (1 retry, 1s backoff) would smooth
+  over transient blips. Defer until I see whether GitLab returns 5xxs
+  in practice during real use; over-aggressive retries make rate-limit
+  problems worse, not better.
+- **Streaming responses to the user.** The agent currently waits for
+  Claude's full message before printing each `TextEvent`. Anthropic
+  supports streaming, which would let prose appear word-by-word — feels
+  much more responsive. Tradeoff: streaming requires reworking the
+  agent loop to consume `messages.stream()` instead of `.create()`,
+  which is non-trivial. Worth it for a polished product, not for a
+  3-day study project.
+
+Decisions resolved during the build (so they're no longer open):
+
+- **Tool granularity** — resolved in favor of 5 coarse-grained tools
+  with rich descriptions (see sections 7-8). Confirmed working in
+  practice: agent picks the right tool reliably across the seeded
+  scenarios.
+- **System prompt vs. tool descriptions** — resolved in section 7.
+
+---
 
 ## 11. What I'd change at scale (Thales-relevant)
 
