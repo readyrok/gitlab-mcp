@@ -233,3 +233,40 @@ SCENARIOS: list[Scenario] = [
         ),
     ),
 ]
+
+def check_scenario(
+    scenario: Scenario,
+    tool_names: list[str],
+    answer: str,
+) -> list[str]:
+    """Return a list of failure messages — empty list means the scenario passed."""
+    failures: list[str] = []
+    answer_lower = answer.lower()
+
+    for tool in scenario.must_call_tools:
+        if tool not in tool_names:
+            failures.append(
+                f"expected tool '{tool}' to be called; calls were {tool_names}"
+            )
+
+    for tool in scenario.must_not_call_tools:
+        if tool in tool_names:
+            failures.append(
+                f"tool '{tool}' should NOT have been called; calls were {tool_names}"
+            )
+
+    if scenario.answer_any_of:
+        if not any(s.lower() in answer_lower for s in scenario.answer_any_of):
+            failures.append(
+                f"answer contained none of {scenario.answer_any_of}; "
+                f"answer was: {answer[:300]}"
+            )
+
+    for needed in scenario.answer_all_of:
+        if needed.lower() not in answer_lower:
+            failures.append(
+                f"answer missing required substring '{needed}'; "
+                f"answer was: {answer[:300]}"
+            )
+
+    return failures

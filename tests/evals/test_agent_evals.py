@@ -22,7 +22,7 @@ import pytest
 from agent.loop import AgentLoop, TextEvent, ToolCallEvent
 
 from tests.evals.conftest import live_agent
-from tests.evals.eval_scenarios import SCENARIOS, Scenario
+from tests.evals.eval_scenarios import SCENARIOS, Scenario, check_scenario
 
 
 async def _run(agent: AgentLoop, question: str) -> tuple[list[str], str]:
@@ -36,45 +36,6 @@ async def _run(agent: AgentLoop, question: str) -> tuple[list[str], str]:
             text_chunks.append(event.text)
     return tool_names, " ".join(text_chunks)
 
-
-def _check_scenario(
-    scenario: Scenario,
-    tool_names: list[str],
-    answer: str,
-) -> list[str]:
-    """Return a list of failure messages — empty list means the scenario passed."""
-    failures: list[str] = []
-    answer_lower = answer.lower()
-
-    for tool in scenario.must_call_tools:
-        if tool not in tool_names:
-            failures.append(
-                f"expected tool '{tool}' to be called; calls were {tool_names}"
-            )
-
-    for tool in scenario.must_not_call_tools:
-        if tool in tool_names:
-            failures.append(
-                f"tool '{tool}' should NOT have been called; calls were {tool_names}"
-            )
-
-    if scenario.answer_any_of:
-        if not any(s.lower() in answer_lower for s in scenario.answer_any_of):
-            failures.append(
-                f"answer contained none of {scenario.answer_any_of}; "
-                f"answer was: {answer[:300]}"
-            )
-
-    for needed in scenario.answer_all_of:
-        if needed.lower() not in answer_lower:
-            failures.append(
-                f"answer missing required substring '{needed}'; "
-                f"answer was: {answer[:300]}"
-            )
-
-    return failures
-
-
 @pytest.mark.evals
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: s.name)
 async def test_scenario(scenario: Scenario) -> None:
@@ -82,7 +43,7 @@ async def test_scenario(scenario: Scenario) -> None:
     async with live_agent() as agent:
         tool_names, answer = await _run(agent, scenario.question)
 
-    failures = _check_scenario(scenario, tool_names, answer)
+    failures = check_scenario(scenario, tool_names, answer)
     assert not failures, (
         f"\nScenario '{scenario.name}' failed:\n"
         f"  rationale: {scenario.rationale}\n"
