@@ -33,6 +33,7 @@ dev = [
 # Convenience entry points — `gitlab-mcp` runs the server.
 [project.scripts]
 gitlab-mcp = "gitlab_mcp.server:main"
+jira-mcp = "jira_mcp.server:main"
 agent = "agent.cli:main"
 
 # Build system: Hatch is the modern default for src-layout projects.
