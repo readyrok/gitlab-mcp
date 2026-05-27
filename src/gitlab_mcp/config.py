@@ -75,6 +75,19 @@ class Settings(BaseSettings):
         description="Cap on tool-call iterations per question (loop safety net).",
     )
 
+    jira_url: HttpUrl | None = Field(
+        default=None,
+        description="Base URL of the Jira Cloud site (e.g. https://acme.atlassian.net).",
+    )
+    jira_email: str | None = Field(
+        default=None,
+        description="Atlassian account email — used as HTTP Basic username with the token.",
+    )
+    jira_token: SecretStr | None = Field(
+        default=None,
+        description="Atlassian API token. Required only by the Jira MCP server.",
+    )
+
     @property
     def gitlab_api_base(self) -> str:
         """Convenience: the /api/v4 base URL the rest of the code uses."""
