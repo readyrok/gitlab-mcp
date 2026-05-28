@@ -325,7 +325,50 @@ and questions with no good answer.
 
 ---
 
-## 11. Open questions (to revisit)
+## 11. A second connector: proving the pattern generalizes
+
+The GitLab connector demonstrates *one* MCP server. The harder question
+— the one the project is really about — is whether the architecture
+generalizes. So I added a second connector for Jira, deliberately, to
+test that claim rather than just assert it.
+
+The design choice: `jira_mcp` is a **parallel package** to `gitlab_mcp`,
+not a subclass and not a generic abstraction.
+
+src/
+gitlab_mcp/   errors, models, gitlab_client, server
+jira_mcp/     errors, models, jira_client,  server
+
+Same five concerns, same shapes, different backend. The two connectors
+share exactly one thing: the pydantic-settings `Settings` class in
+`gitlab_mcp/config.py`, extended with three optional `jira_*` fields.
+
+**Why parallel packages, not a shared base class.** With two connectors,
+a `BaseConnector` abstraction would be premature. The connectors have
+genuinely different internals — GitLab uses bearer-token auth and offset
+pagination; Jira uses HTTP Basic auth and JQL queries. Forcing them
+under a shared base would mean either a leaky abstraction (base class
+full of `if gitlab: ... else: ...`) or an abstraction so thin it adds
+indirection without removing duplication. The right time to extract a
+base is when the third or fourth connector reveals what's *actually*
+common — not before. Two parallel instances make the real commonality
+visible for when that refactor is worth doing.
+
+**Why one config layer, not two.** Adding `jira_mcp/config.py` purely
+for symmetry would duplicate the pydantic-settings setup for no benefit.
+The existing `Settings` class already loads from `.env`; new connectors
+add their fields there. One config surface serves N connectors. Adding
+a third connector is: add its fields to `Settings`, write a sibling
+package, register a console script. The config layer doesn't multiply.
+
+**The proof.** The agent didn't change at all. The same loop, CLI, and
+Anthropic integration drive the Jira connector — you just point the
+server command at it: uv run agent --server-command "uv run jira-mcp" 
+"what's in the mobile project?"
+
+---
+
+## 12. Open questions (to revisit)
 
 Decisions explicitly deferred — not skipped:
 
@@ -358,7 +401,7 @@ Decisions resolved during the build (so they're no longer open):
 
 ---
 
-## 12. What I'd change at scale
+## 13. What I'd change at scale
 
 To extend this from "demo" to "platform serving 40,000 engineers":
 

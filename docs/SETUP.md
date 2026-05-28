@@ -88,3 +88,34 @@ Fill these in after running `--seed` (the script prints them in a summary block)
 - `acme-order-service` — id=`<81913181>`
 - `acme-inventory-api` — id=`<81913196>`
 - `acme-web-frontend`  — id=`<81913213>`
+
+## Jira connector setup
+
+The Jira connector runs against a real Atlassian Cloud site.
+
+1. Create a free Atlassian Cloud account and site at
+   https://www.atlassian.com/software/jira/free (free tier, up to 10
+   users). Note your site URL: `https://<your-site>.atlassian.net`.
+
+2. Create three projects (any names; the demo uses Acme Platform,
+   Acme Mobile, Acme Infrastructure). Team-managed (next-gen) is fine.
+
+3. Create an API token at
+   https://id.atlassian.com/manage-profile/security/api-tokens and
+   copy it.
+
+4. Add to `.env`:
+    JIRA_URL=https://<your-site>.atlassian.net
+    JIRA_EMAIL=<your-atlassian-account-email>
+    JIRA_TOKEN=<your-api-token>
+
+5. Seed demo issues:
+
+```bash
+   uv run python scripts/seed_jira.py          # dry run — lists projects
+   uv run python scripts/seed_jira.py --seed   # creates ~16 issues
+```
+
+Note: Atlassian API tokens are account-scoped, not permission-scoped
+(unlike GitLab PATs). The connector's read-only guarantee is enforced
+in code — the Jira client only performs GET requests. See DESIGN.md §12.

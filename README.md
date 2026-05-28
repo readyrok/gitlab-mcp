@@ -74,6 +74,30 @@ one-line summaries.
 | `get_pipeline_status` | Most recent CI pipelines for a project, newest-first |
 | `get_user_activity` | Aggregated summary of a user's recent commits / MRs / issues / comments |
 
+## A second connector: Jira
+
+To show the architecture generalizes, the repo includes a second MCP
+server — a read-only Jira connector — built as a parallel package to
+the GitLab one (`src/jira_mcp/`, mirroring `src/gitlab_mcp/`). It
+exposes two tools: `list_projects` and `search_issues`.
+
+The agent doesn't change to use it. Same loop, same CLI — you just point
+the server command at the Jira server:
+
+```bash
+uv run agent --server-command "uv run jira-mcp" "find login bugs in the mobile project"
+```
+
+The agent has no GitLab knowledge and no Jira knowledge — it speaks MCP.
+A new backend is a new package plus a console-script entry; the agent is
+untouched. See [`docs/DESIGN.md`](docs/DESIGN.md) §12 for the
+architectural reasoning (parallel packages vs. shared base, one config
+layer for N connectors, the Jira security-model difference, and a real
+endpoint-deprecation bug the live integration caught).
+
+Jira setup (Atlassian Cloud account + API token) is documented in
+[`docs/SETUP.md`](docs/SETUP.md).
+
 ## Quickstart
 
 Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), and a GitLab account.
