@@ -31,7 +31,8 @@ sys.path.insert(0, str(_ROOT))
 from agent.loop import AgentLoop, TextEvent, ToolCallEvent  # noqa: E402
 from agent.mcp_client import MCPClientAdapter  # noqa: E402
 from gitlab_mcp.config import get_settings  # noqa: E402
-from tests.evals.eval_scenarios import SCENARIOS, Scenario, check_scenario  # noqa: E402
+from tests.evals.gitlab_scenarios import SCENARIOS, Scenario, check_scenario  # noqa: E402
+from tests.evals.jira_scenarios import JIRA_SCENARIOS  # noqa: E402
 
 
 # Map each scenario to a human-readable category for the breakdown.
@@ -53,6 +54,10 @@ _CATEGORY: dict[str, str] = {
     "declines_write_action": "edge cases",
     "standup_synthesis": "reasoning",
     "nonexistent_user": "edge cases",
+    "jira_list_projects_basic": "jira basic",
+    "jira_search_issues_keyword": "jira issues",
+    "jira_ambiguous_project_name": "jira edge cases",
+    "jira_two_tool_composition": "jira reasoning",
 }
 
 
@@ -80,32 +85,39 @@ async def main() -> int:
     print(f"  Running {len(SCENARIOS)} scenarios against real Claude + GitLab...")
     print()
 
-    results: list[tuple[Scenario, bool, float, list[str]]] = []
+    results: list[tuple[Scenario, bool, float, list[str], str]] = []
     suite_start = time.perf_counter()
 
-    for scenario in SCENARIOS:
-        # Fresh agent per scenario — no history bleed. Opening the MCP
-        # connection inside this task keeps anyio's cancel scope happy.
-        scenario_start = time.perf_counter()
-        async with MCPClientAdapter(["uv", "run", "gitlab-mcp"]) as mcp:
-            agent = AgentLoop(settings=settings, mcp=mcp)
-            tool_names, answer = await _run_one(agent, scenario)
-        elapsed = time.perf_counter() - scenario_start
+    # Each group: (label, scenarios, server command).
+    groups: list[tuple[str, list[Scenario], list[str]]] = [
+        ("gitlab", SCENARIOS, ["uv", "run", "gitlab-mcp"]),
+        ("jira", JIRA_SCENARIOS, ["uv", "run", "jira-mcp"]),
+    ]
 
-        failures = check_scenario(scenario, tool_names, answer)
-        passed = not failures
-        results.append((scenario, passed, elapsed, failures))
+    for connector_label, scenarios, server_cmd in groups:
+        print(f"  --- {connector_label} ({len(scenarios)} scenarios) ---")
+        for scenario in scenarios:
+            scenario_start = time.perf_counter()
+            async with MCPClientAdapter(server_cmd) as mcp:
+                agent = AgentLoop(settings=settings, mcp=mcp)
+                tool_names, answer = await _run_one(agent, scenario)
+            elapsed = time.perf_counter() - scenario_start
 
-        marker = "PASS" if passed else "FAIL"
-        category = _CATEGORY.get(scenario.name, "uncategorized")
-        print(f"  [{marker}]  {scenario.name:<32} {category:<16} {elapsed:5.1f}s")
-        for f in failures:
-            print(f"           └─ {f}")
+            failures = check_scenario(scenario, tool_names, answer)
+            passed = not failures
+            results.append((scenario, passed, elapsed, failures, connector_label))
+
+            marker = "PASS" if passed else "FAIL"
+            category = _CATEGORY.get(scenario.name, "uncategorized")
+            print(f"  [{marker}]  {scenario.name:<32} {category:<16} {elapsed:5.1f}s")
+            for f in failures:
+                print(f"           └─ {f}")
+        print()
 
     suite_elapsed = time.perf_counter() - suite_start
 
     # ----- summary --------------------------------------------------------
-    passed_count = sum(1 for _, p, _, _ in results if p)
+    passed_count = sum(1 for _, p, _, _, _ in results if p)
     total = len(results)
     pct = (passed_count / total * 100) if total else 0.0
 
@@ -117,7 +129,7 @@ async def main() -> int:
 
     # Per-category breakdown.
     by_cat: dict[str, list[bool]] = {}
-    for scenario, passed, _, _ in results:
+    for scenario, passed, _, _, _ in results:
         cat = _CATEGORY.get(scenario.name, "uncategorized")
         by_cat.setdefault(cat, []).append(passed)
 
@@ -126,6 +138,17 @@ async def main() -> int:
         outcomes = by_cat[cat]
         cat_pass = sum(outcomes)
         print(f"    {cat:<20} {cat_pass}/{len(outcomes)}")
+
+    by_connector: dict[str, list[bool]] = {}
+    for _, passed, _, _, connector_label in results:
+        by_connector.setdefault(connector_label, []).append(passed)
+
+    print()
+    print("  By connector:")
+    for connector in sorted(by_connector):
+        outcomes = by_connector[connector]
+        c_pass = sum(outcomes)
+        print(f"    {connector:<20} {c_pass}/{len(outcomes)}")
 
     print("-" * 64)
 

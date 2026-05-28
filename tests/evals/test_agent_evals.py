@@ -22,7 +22,8 @@ import pytest
 from agent.loop import AgentLoop, TextEvent, ToolCallEvent
 
 from tests.evals.conftest import live_agent
-from tests.evals.eval_scenarios import SCENARIOS, Scenario, check_scenario
+from tests.evals.gitlab_scenarios import SCENARIOS, Scenario, check_scenario
+from tests.evals.jira_scenarios import JIRA_SCENARIOS
 
 
 async def _run(agent: AgentLoop, question: str) -> tuple[list[str], str]:
@@ -38,9 +39,29 @@ async def _run(agent: AgentLoop, question: str) -> tuple[list[str], str]:
 
 @pytest.mark.evals
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda s: s.name)
-async def test_scenario(scenario: Scenario) -> None:
+async def test_gitlab_scenario(scenario: Scenario) -> None:
     """Run one eval scenario end-to-end against the real agent."""
     async with live_agent() as agent:
+        tool_names, answer = await _run(agent, scenario.question)
+
+    failures = check_scenario(scenario, tool_names, answer)
+    assert not failures, (
+        f"\nScenario '{scenario.name}' failed:\n"
+        f"  rationale: {scenario.rationale}\n"
+        f"  question:  {scenario.question}\n"
+        + "".join(f"  - {f}\n" for f in failures)
+    )
+
+@pytest.mark.evals
+@pytest.mark.parametrize("scenario", JIRA_SCENARIOS, ids=lambda s: s.name)
+async def test_jira_scenario(scenario: Scenario) -> None:
+    """Run one Jira eval scenario end-to-end against the real Jira-backed agent.
+
+    Distinct from test_scenario because it points the agent at the
+    jira-mcp server instead of gitlab-mcp. Same agent, different
+    server — the architecture's whole point.
+    """
+    async with live_agent(server_command=["uv", "run", "jira-mcp"]) as agent:
         tool_names, answer = await _run(agent, scenario.question)
 
     failures = check_scenario(scenario, tool_names, answer)

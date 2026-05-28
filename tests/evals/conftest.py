@@ -42,22 +42,27 @@ def _evals_dont_isolate_env() -> None:
 
 
 @asynccontextmanager
-async def live_agent() -> AsyncIterator[AgentLoop]:
+async def live_agent(
+    server_command: list[str] | None = None,
+) -> AsyncIterator[AgentLoop]:
     """Async context manager yielding a real AgentLoop.
+
+    Optional server_command lets a test point the agent at a different
+    MCP server (e.g. jira-mcp). Defaults to gitlab-mcp.
 
     Use inside an eval test body:
 
-        async with live_agent() as agent:
-            async for event in agent.ask("..."):
-                ...
+        async with live_agent() as agent:                              # gitlab
+            ...
+        async with live_agent(["uv", "run", "jira-mcp"]) as agent:     # jira
+            ...
 
-    NOT a pytest fixture — see the module docstring for why. Opening and
-    closing the MCP connection inside the test's own task is what keeps
-    anyio's cancel-scope rule satisfied.
+    NOT a pytest fixture — see the module docstring for why.
     """
     settings = get_settings()
     if settings.anthropic_api_key is None:
         pytest.skip("ANTHROPIC_API_KEY not set — evals require real credentials")
 
-    async with MCPClientAdapter(["uv", "run", "gitlab-mcp"]) as mcp:
+    cmd = server_command or ["uv", "run", "gitlab-mcp"]
+    async with MCPClientAdapter(cmd) as mcp:
         yield AgentLoop(settings=settings, mcp=mcp)
