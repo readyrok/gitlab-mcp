@@ -178,7 +178,7 @@ class JiraClient:
         jql = " AND ".join(jql_parts)
 
         data = await self._get(
-            "/rest/api/3/search",
+            "/rest/api/3/search/jql",
             params={
                 "jql": jql,
                 "fields": _ISSUE_FIELDS,

@@ -97,7 +97,7 @@ async def test_list_projects_server_error_translates(settings: Settings) -> None
 
 @respx.mock
 async def test_search_issues_returns_models(settings: Settings) -> None:
-    respx.get("https://acme.atlassian.net/rest/api/3/search").mock(
+    respx.get("https://acme.atlassian.net/rest/api/3/search/jql").mock(
         return_value=httpx.Response(
             200,
             json={
@@ -138,7 +138,7 @@ async def test_search_issues_returns_models(settings: Settings) -> None:
 
 @respx.mock
 async def test_search_issues_empty_results(settings: Settings) -> None:
-    respx.get("https://acme.atlassian.net/rest/api/3/search").mock(
+    respx.get("https://acme.atlassian.net/rest/api/3/search/jql").mock(
         return_value=httpx.Response(200, json={"issues": []})
     )
 
@@ -154,7 +154,7 @@ async def test_search_issues_builds_jql_with_project_and_query(
 ) -> None:
     """JQL must scope by project and include the keyword. Exact JQL syntax
     matters because Jira parses it server-side — wrong syntax = 400."""
-    route = respx.get("https://acme.atlassian.net/rest/api/3/search").mock(
+    route = respx.get("https://acme.atlassian.net/rest/api/3/search/jql").mock(
         return_value=httpx.Response(200, json={"issues": []})
     )
 
