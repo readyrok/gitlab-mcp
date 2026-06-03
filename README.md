@@ -11,7 +11,7 @@ server surface (how tools are described and executed) and its client surface
 (how an agent discovers and orchestrates them). The whole stack runs locally
 against your own GitLab and Anthropic credentials.
 
-[![asciicast](https://asciinema.org/a/nEFlQfXTL8O5qldu.svg)](https://asciinema.org/a/nEFlQfXTL8O5qldu)
+[![asciicast](https://asciinema.org/a/Y9f1T7hIbrZSNWp9.svg)](https://asciinema.org/a/Y9f1T7hIbrZSNWp9)
 
 ## Why this exists
 
