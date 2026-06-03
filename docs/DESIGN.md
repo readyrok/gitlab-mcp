@@ -363,8 +363,40 @@ package, register a console script. The config layer doesn't multiply.
 
 **The proof.** The agent didn't change at all. The same loop, CLI, and
 Anthropic integration drive the Jira connector — you just point the
-server command at it: uv run agent --server-command "uv run jira-mcp" 
-"what's in the mobile project?"
+server command at it: 
+uv run agent --server-command "uv run jira-mcp" "what's in the mobile project?"
+
+The agent has no GitLab knowledge and no Jira knowledge. It speaks MCP.
+That's the entire point of the protocol, and the second connector is
+what turns "I believe this generalizes" into "here is it generalizing."
+
+**A lesson carried forward.** The GitLab evals surfaced the model
+guessing `project_id=0` when a tool description wasn't forceful enough
+about resolving IDs first. I wrote the Jira `list_projects` and
+`search_issues` descriptions defensively from the first line ("call
+this FIRST, never guess a project key"). A lesson from connector one,
+applied to the design of connector two before it could bite.
+
+**Honest note on the Jira security model.** GitLab PATs can be scoped
+to `read_api`, giving a real read-only credential. Atlassian API tokens
+are account-scoped, not permission-scoped — there is no read-only token.
+So the Jira connector's read-only guarantee is enforced *in code* (the
+client exposes only GET operations) rather than by the credential. A
+production deployment would use a dedicated Atlassian service account
+with a restricted permission scheme, or OAuth 2.0 with explicit scopes.
+Two backends, genuinely different security models — worth noticing
+rather than assuming they're the same.
+
+**A real bug the live integration caught.** The Jira connector's unit
+tests passed, but the first real agent run failed: Atlassian had fully
+removed the `/rest/api/3/search` endpoint (410 Gone) in favour of
+`/rest/api/3/search/jql`. The mocked unit tests couldn't catch it —
+they assert our code does what we told it to, not that the upstream API
+still behaves that way. This is exactly why the GitLab side has
+eval-style tests against the real API, and why a production system needs
+contract tests or synthetic monitoring hitting the real endpoints.
+Mocks protect against regressions in your own code; they do not protect
+against the world changing underneath you.
 
 ---
 
