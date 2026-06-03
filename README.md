@@ -1,6 +1,6 @@
 # gitlab-mcp
 
-[![CI](https://github.com/readyrok/gitlab-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/readyrok/gitlab-mcp/actions/workflows/ci.yml)
+[![CI](https://github.com/readyrok/gitlab-mcp/actions/workflows/ci.yaml/badge.svg)](https://github.com/readyrok/gitlab-mcp/actions/workflows/ci.yaml)
 
 > Two read-only [Model Context Protocol](https://modelcontextprotocol.io/)
 > servers — one for GitLab, one for Jira — plus a CLI agent that drives them
