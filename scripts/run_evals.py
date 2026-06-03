@@ -28,12 +28,12 @@ _ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_ROOT / "src"))
 sys.path.insert(0, str(_ROOT))
 
-from agent.loop import AgentLoop, TextEvent, ToolCallEvent  # noqa: E402
-from agent.mcp_client import MCPClientAdapter  # noqa: E402
-from gitlab_mcp.config import get_settings  # noqa: E402
 from tests.evals.gitlab_scenarios import SCENARIOS, Scenario, check_scenario  # noqa: E402
 from tests.evals.jira_scenarios import JIRA_SCENARIOS  # noqa: E402
 
+from agent.loop import AgentLoop, TextEvent, ToolCallEvent  # noqa: E402
+from agent.mcp_client import MCPClientAdapter  # noqa: E402
+from gitlab_mcp.config import get_settings  # noqa: E402
 
 # Map each scenario to a human-readable category for the breakdown.
 # Derived from the scenario name prefix / intent.

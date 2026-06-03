@@ -26,7 +26,6 @@ from mcp.server.fastmcp import Context, FastMCP
 from gitlab_mcp.config import get_settings
 from jira_mcp.jira_client import JiraClient
 
-
 logger = logging.getLogger("jira_mcp.server")
 
 

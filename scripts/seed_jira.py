@@ -42,7 +42,6 @@ import httpx
 
 from gitlab_mcp.config import get_settings
 
-
 # ---------------------------------------------------------------------------
 # Seed data — three projects' worth of realistic issues.
 # ---------------------------------------------------------------------------
@@ -283,7 +282,7 @@ class JiraSeeder:
     def close(self) -> None:
         self._client.close()
 
-    def __enter__(self) -> "JiraSeeder":
+    def __enter__(self) -> JiraSeeder:
         return self
 
     def __exit__(self, *exc: object) -> None:

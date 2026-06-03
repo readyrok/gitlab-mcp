@@ -18,7 +18,6 @@ from gitlab_mcp.config import Settings
 from jira_mcp.errors import JiraAuthError, JiraServerError
 from jira_mcp.jira_client import JiraClient
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

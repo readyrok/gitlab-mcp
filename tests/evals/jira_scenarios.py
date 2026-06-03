@@ -18,7 +18,6 @@ from __future__ import annotations
 # even though they target different connectors.
 from tests.evals.gitlab_scenarios import Scenario, check_scenario  # noqa: F401
 
-
 JIRA_SCENARIOS: list[Scenario] = [
     Scenario(
         name="jira_list_projects_basic",

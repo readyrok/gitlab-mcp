@@ -20,7 +20,6 @@ from __future__ import annotations
 import pytest
 
 from agent.loop import AgentLoop, TextEvent, ToolCallEvent
-
 from tests.evals.conftest import live_agent
 from tests.evals.gitlab_scenarios import SCENARIOS, Scenario, check_scenario
 from tests.evals.jira_scenarios import JIRA_SCENARIOS

@@ -36,7 +36,6 @@ from jira_mcp.errors import (
 )
 from jira_mcp.models import Issue, Project
 
-
 logger = logging.getLogger("jira_mcp.client")
 
 
@@ -106,7 +105,9 @@ class JiraClient:
             logger.info(
                 "jira.api.timeout path=%s elapsed_ms=%.0f", path, elapsed
             )
-            raise JiraServerError(f"Jira timeout after {elapsed:.0f}ms on {path}")
+            raise JiraServerError(
+                f"Jira timeout after {elapsed:.0f}ms on {path}"
+            ) from None
 
         elapsed = (time.perf_counter() - start) * 1000
         logger.info(

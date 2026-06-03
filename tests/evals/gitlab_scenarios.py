@@ -255,12 +255,13 @@ def check_scenario(
                 f"tool '{tool}' should NOT have been called; calls were {tool_names}"
             )
 
-    if scenario.answer_any_of:
-        if not any(s.lower() in answer_lower for s in scenario.answer_any_of):
-            failures.append(
-                f"answer contained none of {scenario.answer_any_of}; "
-                f"answer was: {answer[:300]}"
-            )
+    if scenario.answer_any_of and not any(
+        s.lower() in answer_lower for s in scenario.answer_any_of
+    ):
+        failures.append(
+            f"answer contained none of {scenario.answer_any_of}; "
+            f"answer was: {answer[:300]}"
+        )
 
     for needed in scenario.answer_all_of:
         if needed.lower() not in answer_lower:
